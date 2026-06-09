@@ -1,0 +1,122 @@
+[
+  {
+    "friend_id": "suyog",
+    "name": "Suyog",
+    "text": "Suyog likes structured schedules, being outside, trying local food, and exploring restaurants. He especially enjoys small side quests, spontaneous detours, hidden shops, quick stops, and unusual local experiences. He is open to partying once or twice during the trip.",
+    "metadata": {
+      "diet": "no_restrictions",
+      "budget_style": "moderate",
+      "pace": "medium",
+      "activity_style": ["local_food", "restaurants", "outdoors", "side_quests", "structured_schedule"],
+      "constraints": []
+    }
+  },
+  {
+    "friend_id": "aaryan",
+    "name": "Aaryan",
+    "text": "Aaryan likes structured schedules, being outside, trying local food, restaurants, and nightlife. He especially enjoys bars, clubs, live music, and social late-night activities. He would like the group to party once or twice during the trip.",
+    "metadata": {
+      "diet": "no_restrictions",
+      "budget_style": "moderate",
+      "pace": "medium",
+      "activity_style": ["nightlife", "local_food", "restaurants", "outdoors", "structured_schedule"],
+      "constraints": []
+    }
+  },
+  {
+    "friend_id": "karan",
+    "name": "Karan",
+    "text": "Karan likes structured schedules, outdoor activities, local food, and restaurants. He especially enjoys scenic adventures, viewpoints, nature spots, and photo-friendly locations where he can take pictures.",
+    "metadata": {
+      "diet": "no_restrictions",
+      "budget_style": "moderate",
+      "pace": "medium",
+      "activity_style": ["scenic_adventures", "photography", "outdoors", "local_food", "structured_schedule"],
+      "constraints": []
+    }
+  },
+  {
+    "friend_id": "vinoth",
+    "name": "Vinoth",
+    "text": "Vinoth likes structured schedules, outdoor activities, local food, and restaurants. He especially likes steak and would enjoy finding strong local steakhouse or grilled meat options during the trip.",
+    "metadata": {
+      "diet": "no_restrictions",
+      "budget_style": "moderate",
+      "pace": "medium",
+      "activity_style": ["steak", "local_food", "restaurants", "outdoors", "structured_schedule"],
+      "constraints": []
+    }
+  },
+  {
+    "friend_id": "varshan",
+    "name": "Varshan",
+    "text": "Varshan likes structured schedules, being outside, local food, and restaurants. He is easy going and flexible with group decisions. He especially likes steak and appreciates good-value food options.",
+    "metadata": {
+      "diet": "no_restrictions",
+      "budget_style": "moderate",
+      "pace": "medium",
+      "activity_style": ["steak", "local_food", "restaurants", "outdoors", "easy_going", "structured_schedule"],
+      "constraints": []
+    }
+  },
+  {
+    "friend_id": "kahsai",
+    "name": "Kahsai",
+    "text": "Kahsai likes structured schedules, being outside, trying local food, and restaurants. He is easy going and flexible with group decisions, and is comfortable adapting to the group's preferred activities.",
+    "metadata": {
+      "diet": "no_restrictions",
+      "budget_style": "moderate",
+      "pace": "medium",
+      "activity_style": ["local_food", "restaurants", "outdoors", "easy_going", "structured_schedule"],
+      "constraints": []
+    }
+  },
+  {
+    "friend_id": "shubh",
+    "name": "Shubh",
+    "text": "Shubh likes structured schedules, being outside, local restaurants, and trying local food when vegetarian options are available. Shubh is the only vegetarian in the group, so restaurants should include reliable vegetarian-friendly options.",
+    "metadata": {
+      "diet": "vegetarian",
+      "budget_style": "moderate",
+      "pace": "medium",
+      "activity_style": ["vegetarian_food", "local_food", "restaurants", "outdoors", "structured_schedule"],
+      "constraints": ["vegetarian"]
+    }
+  },
+  {
+    "friend_id": "adam",
+    "name": "Adam",
+    "text": "Adam likes structured schedules, being outside, local food, and restaurants. He especially likes steak. Adam is outgoing, enjoys meeting new people, and likes talking to strangers during social activities.",
+    "metadata": {
+      "diet": "no_restrictions",
+      "budget_style": "moderate",
+      "pace": "medium",
+      "activity_style": ["steak", "local_food", "restaurants", "outdoors", "social", "structured_schedule"],
+      "constraints": []
+    }
+  },
+  {
+    "friend_id": "cholen",
+    "name": "Cholen",
+    "text": "Cholen likes structured schedules, being outside, trying local food, and restaurants. He enjoys practical group plans with good routing and enough time to enjoy each stop without rushing.",
+    "metadata": {
+      "diet": "no_restrictions",
+      "budget_style": "moderate",
+      "pace": "medium",
+      "activity_style": ["local_food", "restaurants", "outdoors", "structured_schedule"],
+      "constraints": []
+    }
+  },
+  {
+    "friend_id": "krish",
+    "name": "Krish",
+    "text": "Krish likes structured schedules, being outside, local food, and restaurants. He enjoys memorable local experiences, adventurous meals, and unique stops that feel specific to the destination. He is open to partying once or twice during the trip.",
+    "metadata": {
+      "diet": "no_restrictions",
+      "budget_style": "moderate",
+      "pace": "medium",
+      "activity_style": ["steak", "local_food", "restaurants", "outdoors", "unique_experiences", "structured_schedule"],
+      "constraints": []
+    }
+  }
+]
