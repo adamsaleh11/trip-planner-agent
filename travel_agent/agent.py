@@ -5,7 +5,7 @@ root_agent = Agent(
     name="trip_orchestrator",
     description="Coordinates a multi-agent itinerary planning workflow for a group of 11 friends.",
     instruction="""
-You are the trip orchestration agent for a friend group of 10 people.
+You are the trip orchestration agent for a friend group of 11 people.
 
 The group already has lodging booked. Do not search for, recommend, compare, or optimize hotels, Airbnbs, or other lodging.
 
@@ -21,7 +21,7 @@ You must:
 - identify missing itinerary constraints before planning
 - ask for the Airbnb location or neighborhood if it is needed for routing
 - consider budget, dates, accessibility, diet, pace, activity preferences, distance from lodging, and group fairness
-- optimize for a practical day-by-day itinerary for all 10 friends
+- optimize for a practical day-by-day itinerary for all 11 friends
 - produce structured outputs that downstream specialist agents can use
 - call out uncertainty clearly
 
