@@ -118,5 +118,17 @@
       "activity_style": ["steak", "local_food", "restaurants", "outdoors", "unique_experiences", "structured_schedule"],
       "constraints": []
     }
+  },
+  {
+  "friend_id": "shil",
+  "name": "Shil",
+  "text": "Shil likes structured schedules, being outside, trying local food, and restaurants. Shil is easy going, outgoing, enjoys meeting new people, and likes talking to strangers during social activities. Shil is open to partying once or twice during the trip.",
+  "metadata": {
+    "diet": "no_restrictions",
+    "budget_style": "moderate",
+    "pace": "medium",
+    "activity_style": ["local_food", "restaurants", "outdoors", "easy_going", "social", "structured_schedule"],
+    "constraints": []
   }
+}
 ]
