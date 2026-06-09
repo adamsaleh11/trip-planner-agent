@@ -13,7 +13,7 @@ EMBEDDING_MODEL = "text-embedding-005"
 ROOT_DIR = Path(__file__).resolve().parents[1]
 SOURCE_PATH = ROOT_DIR / "data" / "friend_preferences.json"
 OUTPUT_DIR = ROOT_DIR / "build" / "vector_search"
-OUTPUT_PATH = OUTPUT_DIR / "friend_preferences.jsonl"
+OUTPUT_PATH = OUTPUT_DIR / "friend_preferences.json"
 
 
 def load_friend_preferences():
