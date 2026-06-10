@@ -3,7 +3,17 @@ import os
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import generation, health, invites, me, places, preferences, trips
+from app.api import (
+    generation,
+    health,
+    invites,
+    manual_plans,
+    me,
+    places,
+    preferences,
+    trips,
+    whims,
+)
 from app.core.config import get_settings
 from app.core.logging import RequestLoggingMiddleware, configure_logging
 
@@ -45,7 +55,9 @@ def create_app() -> FastAPI:
     app.include_router(invites.router)
     app.include_router(places.router)
     app.include_router(preferences.router)
+    app.include_router(manual_plans.router)
     app.include_router(generation.router)
+    app.include_router(whims.router)
 
     return app
 

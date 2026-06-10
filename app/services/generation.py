@@ -13,6 +13,7 @@ from app.core.auth import CurrentUser
 from app.data.repository import Repository
 from app.models.preferences import CATEGORIES, GroupPreferencesEntry
 from app.models.trip import Trip
+from app.services import manual_plans as manual_plans_service
 from app.services import preferences as prefs_service
 from app.services import trips as trips_service
 
@@ -37,6 +38,7 @@ class GenerationRunner(Protocol):
         trip: Trip,
         group_preferences: list[GroupPreferencesEntry],
         category_results: dict[str, dict[str, Any]],
+        manual_plans: list[dict[str, Any]],
         trace_id: str,
     ) -> dict[str, Any]:
         ...
@@ -288,14 +290,21 @@ def _run_trip_generation_job(
             generation_id,
             {"agentStatuses": agent_statuses},
         )
+        manual_plans = [
+            plan.model_dump()
+            for plan in manual_plans_service.list_manual_plans(repo, trip.id, uid)
+        ]
         output = runner.run_coordinator(
             trip=trip,
             group_preferences=group_preferences,
             category_results=category_results,
+            manual_plans=manual_plans,
             trace_id=trace_id,
         )
         itinerary = output["itinerary"]
-        _validate_itinerary(itinerary, category_results, output.get("toolResults", []))
+        _validate_itinerary(
+            itinerary, category_results, output.get("toolResults", []), manual_plans
+        )
         agent_statuses["coordinator"] = "done"
         repo.update(
             generation_collection,
@@ -343,6 +352,7 @@ def _validate_itinerary(
     itinerary: dict[str, Any],
     category_results: dict[str, dict[str, Any]],
     coordinator_tool_results: list[dict[str, Any]],
+    manual_plans: list[dict[str, Any]] | None = None,
 ) -> None:
     from travel_agent.graph import validate_itinerary_grounding
     from travel_agent.schemas import Itinerary
@@ -351,6 +361,7 @@ def _validate_itinerary(
     captured_tool_results = [
         *(result.get("toolResults", []) for result in category_results.values()),
         coordinator_tool_results,
+        {"manualPlans": manual_plans or []},
     ]
     validate_itinerary_grounding(model, captured_tool_results)
 
@@ -450,6 +461,7 @@ class AdkGenerationRunner:
         trip: Trip,
         group_preferences: list[GroupPreferencesEntry],
         category_results: dict[str, dict[str, Any]],
+        manual_plans: list[dict[str, Any]],
         trace_id: str,
     ) -> dict[str, Any]:
         from travel_agent.graph import build_coordinator_agent
@@ -462,6 +474,7 @@ class AdkGenerationRunner:
                 "groupPreferences": [
                     entry.model_dump(exclude_none=True) for entry in group_preferences
                 ],
+                "manualPlans": manual_plans,
             },
             sort_keys=True,
         )

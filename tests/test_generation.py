@@ -107,14 +107,50 @@ class ScriptedGenerationRunner:
         }
 
     def run_coordinator(
-        self, *, trip, group_preferences, category_results, trace_id
+        self, *, trip, group_preferences, category_results, trace_id, manual_plans=None
     ):
-        self.coordinator_calls.append(
-            {
-                "participantIds": [entry.participantId for entry in group_preferences],
-                "categories": sorted(category_results),
+        call = {
+            "participantIds": [entry.participantId for entry in group_preferences],
+            "categories": sorted(category_results),
+        }
+        if manual_plans is not None:
+            call["manualPlanActivities"] = [plan["activity"] for plan in manual_plans]
+        self.coordinator_calls.append(call)
+        if manual_plans:
+            manual_plan = manual_plans[0]
+            stop = {
+                "time": "20:00",
+                "placeId": manual_plan["placeId"],
+                "name": manual_plan["activity"],
+                "address": manual_plan.get("address") or "Not available",
+                "lat": None,
+                "lng": None,
+                "category": manual_plan["category"],
+                "transport": {
+                    "mode": "walk",
+                    "durationText": "Not available",
+                },
+                "whyItFits": "User-added manual plan.",
+                "suggested": False,
+                "source": "manual_plan",
+                "manualPlanId": manual_plan["id"],
             }
-        )
+        else:
+            stop = {
+                "time": "09:30",
+                "placeId": "places/cafe-lisboa",
+                "name": "Cafe Lisboa",
+                "address": "Rua A, Lisbon",
+                "lat": 38.71,
+                "lng": -9.14,
+                "category": "food_drink",
+                "transport": {
+                    "mode": "walk",
+                    "durationText": "10 mins",
+                },
+                "whyItFits": "Starts the day with coffee.",
+                "suggested": False,
+            }
         return {
             "itinerary": {
                 "days": [
@@ -123,23 +159,7 @@ class ScriptedGenerationRunner:
                         "blocks": [
                             {
                                 "period": "morning",
-                                "stops": [
-                                    {
-                                        "time": "09:30",
-                                        "placeId": "places/cafe-lisboa",
-                                        "name": "Cafe Lisboa",
-                                        "address": "Rua A, Lisbon",
-                                        "lat": 38.71,
-                                        "lng": -9.14,
-                                        "category": "food_drink",
-                                        "transport": {
-                                            "mode": "walk",
-                                            "durationText": "10 mins",
-                                        },
-                                        "whyItFits": "Starts the day with coffee.",
-                                        "suggested": False,
-                                    }
-                                ],
+                                "stops": [stop],
                             }
                         ],
                     }
@@ -279,7 +299,77 @@ def test_coordinator_reuses_fresh_category_results(client, verifier, repo):
     assert trip["latestGenerationId"] == generation_id
     assert runner.category_calls == []
     assert runner.coordinator_calls == [
-        {"participantIds": [participant_id], "categories": sorted(CATEGORY_ORDER)}
+        {
+            "participantIds": [participant_id],
+            "categories": sorted(CATEGORY_ORDER),
+            "manualPlanActivities": [],
+        }
+    ]
+
+
+def test_coordinator_receives_manual_plans_without_rerunning_categories(
+    client, verifier, repo
+):
+    from app.services.generation import get_generation_runner
+    from tests.test_manual_plans import MANUAL_PLAN
+    from travel_agent.graph import CATEGORY_ORDER
+
+    runner = ScriptedGenerationRunner()
+    client.app.dependency_overrides[get_generation_runner] = lambda: runner
+    owner = _user(verifier)
+    trip_id = _create_trip(client, owner)
+    participant_id = client.get(
+        f"/trips/{trip_id}/participants", headers=_auth(owner)
+    ).json()[0]["id"]
+    client.post(
+        f"/trips/{trip_id}/manual-plans",
+        json=MANUAL_PLAN,
+        headers=_auth(owner),
+    )
+    for category in CATEGORY_ORDER:
+        repo.set(
+            f"trips/{trip_id}/categoryResults",
+            category,
+            {
+                "status": "complete",
+                "candidates": [
+                    {
+                        "placeId": "places/cafe-lisboa",
+                        "name": "Cafe Lisboa",
+                        "address": "Rua A, Lisbon",
+                        "lat": 38.71,
+                        "lng": -9.14,
+                        "whyItFits": "Fits the trip.",
+                        "timeOfDayFit": "morning",
+                        "priceLevel": "$$",
+                        "suggested": True,
+                    }
+                ],
+                "toolResults": [{"places": [{"id": "places/cafe-lisboa"}]}],
+                "preferencesVersion": "none",
+                "traceId": f"{category}-trace",
+                "updatedAt": datetime.now(timezone.utc).isoformat(),
+            },
+        )
+
+    response = client.post(f"/trips/{trip_id}/generate", headers=_auth(owner))
+
+    assert response.status_code == 202
+    generation = repo.get(
+        f"trips/{trip_id}/generations", response.json()["generationId"]
+    )
+    assert generation["status"] == "complete"
+    manual_stop = generation["itinerary"]["days"][0]["blocks"][0]["stops"][0]
+    assert manual_stop["placeId"] == "places/time-out-market"
+    assert manual_stop["source"] == "manual_plan"
+    assert manual_stop["manualPlanId"]
+    assert runner.category_calls == []
+    assert runner.coordinator_calls == [
+        {
+            "participantIds": [participant_id],
+            "categories": sorted(CATEGORY_ORDER),
+            "manualPlanActivities": ["Dinner at Time Out Market"],
+        }
     ]
 
 

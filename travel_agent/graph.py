@@ -236,8 +236,14 @@ Itinerary dates: {dates}
 Merge candidate lists from the five category specialists into the final Itinerary schema:
 - days must cover exactly these dates: {dates}.
 - Each day should use morning, afternoon, and evening blocks where candidates fit.
-- Each stop must include time, placeId, name, address, lat, lng, category, transport, whyItFits, suggested.
+- Each stop must include time, placeId, name, address, lat, lng, category, transport, whyItFits, suggested, source, and manualPlanId when applicable.
 - Preserve suggested from the category candidate. Do not relabel inferred items as user-requested.
+- Use source="participant_preference" when suggested=false because a category candidate traces directly to participant preferences.
+- Use source="ai_suggestion" when suggested=true.
+- manual plans are concrete user-added commitments from the manualPlans input. Schedule each manual plan into the itinerary when possible.
+- Manual plan stops must set suggested=false, source="manual_plan", and manualPlanId to the source plan id.
+- Manual plans do not come from category agents. Do not use them to change category candidate provenance.
+- If a manual plan cannot be scheduled because of date, location, or missing required information, add a manualPlanWarnings item with manualPlanId, activity, and a user-readable reason.
 - Use estimate_route_time for lodging-to-first-stop and important stop-to-stop movements, with lodging origin "{lodging}".
 - Route estimate budget: at most {MAX_ROUTE_ESTIMATES_PER_GENERATION} calls for the whole generation.
 - If route data is missing or not worth spending budget, set transport.durationText to "Not available".

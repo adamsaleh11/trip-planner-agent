@@ -50,6 +50,10 @@ class ItineraryStop(BaseModel):
     transport: Transport
     whyItFits: str = Field(min_length=1)
     suggested: bool
+    source: Literal["participant_preference", "ai_suggestion", "manual_plan"] = (
+        "ai_suggestion"
+    )
+    manualPlanId: Optional[str] = None
 
 
 class ItineraryBlock(BaseModel):
@@ -62,8 +66,15 @@ class ItineraryDay(BaseModel):
     blocks: list[ItineraryBlock]
 
 
+class ManualPlanWarning(BaseModel):
+    manualPlanId: str = Field(min_length=1)
+    activity: str = Field(min_length=1)
+    reason: str = Field(min_length=1)
+
+
 class Itinerary(BaseModel):
     days: list[ItineraryDay]
+    manualPlanWarnings: list[ManualPlanWarning] = Field(default_factory=list)
 
     @field_validator("days")
     @classmethod

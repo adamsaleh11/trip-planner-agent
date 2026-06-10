@@ -53,6 +53,9 @@ class FakeRepository(Repository):
         key = self._key(collection, doc_id)
         self.store[key] = {**self.store.get(key, {}), **data}
 
+    def delete(self, collection: str, doc_id: str) -> None:
+        self.store.pop(self._key(collection, doc_id), None)
+
     def list(self, collection: str) -> list[tuple[str, dict]]:
         prefix = f"{collection}/"
         return [

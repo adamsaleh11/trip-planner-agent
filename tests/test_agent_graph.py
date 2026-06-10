@@ -160,6 +160,62 @@ def test_final_itinerary_schema_validates_days_blocks_and_stops():
     assert itinerary.days[0].blocks[0].stops[0].suggested is False
 
 
+def test_itinerary_schema_supports_manual_plan_provenance_and_warnings():
+    itinerary = Itinerary.model_validate(
+        {
+            "manualPlanWarnings": [
+                {
+                    "manualPlanId": "plan-2",
+                    "activity": "Sunset viewpoint",
+                    "reason": "Date falls outside the available itinerary days.",
+                }
+            ],
+            "days": [
+                {
+                    "date": "2026-07-01",
+                    "blocks": [
+                        {
+                            "period": "evening",
+                            "stops": [
+                                {
+                                    "time": "20:00",
+                                    "placeId": "places/time-out-market",
+                                    "name": "Dinner at Time Out Market",
+                                    "address": "Av. 24 de Julho 49, Lisbon",
+                                    "lat": None,
+                                    "lng": None,
+                                    "category": "food_drink",
+                                    "transport": {
+                                        "mode": "walk",
+                                        "durationText": "Not available",
+                                    },
+                                    "whyItFits": "User-added manual plan.",
+                                    "suggested": False,
+                                    "source": "manual_plan",
+                                    "manualPlanId": "plan-1",
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ],
+        }
+    )
+
+    stop = itinerary.days[0].blocks[0].stops[0]
+    assert stop.source == "manual_plan"
+    assert stop.manualPlanId == "plan-1"
+    assert itinerary.manualPlanWarnings[0].manualPlanId == "plan-2"
+
+
+def test_coordinator_instruction_mentions_manual_plans_as_user_added_context():
+    agent = build_coordinator_agent(_trip())
+
+    assert "manual plans" in agent.instruction
+    assert "source=\"manual_plan\"" in agent.instruction
+    assert "manualPlanWarnings" in agent.instruction
+
+
 def test_itinerary_grounding_requires_places_from_captured_tool_results():
     itinerary = Itinerary.model_validate(
         {

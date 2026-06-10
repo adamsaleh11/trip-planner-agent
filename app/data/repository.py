@@ -27,6 +27,10 @@ class Repository(abc.ABC):
         """Merge fields into a document (other fields untouched)."""
 
     @abc.abstractmethod
+    def delete(self, collection: str, doc_id: str) -> None:
+        """Delete the document if it exists."""
+
+    @abc.abstractmethod
     def list(self, collection: str) -> list[tuple[str, dict]]:
         """Return ``(doc_id, data)`` pairs for every document in a collection.
 
@@ -52,6 +56,9 @@ class FirestoreRepository(Repository):
 
     def update(self, collection: str, doc_id: str, data: dict) -> None:
         self._client.collection(collection).document(doc_id).set(data, merge=True)
+
+    def delete(self, collection: str, doc_id: str) -> None:
+        self._client.collection(collection).document(doc_id).delete()
 
     def list(self, collection: str) -> list[tuple[str, dict]]:
         return [
