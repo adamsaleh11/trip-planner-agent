@@ -43,3 +43,10 @@ Plan: plans/trip-journal-pivot.md · Phase 3
 - [ ] Real end-to-end run: metrics show plausible non-zero tokens/latency/cost; traceId present; trip status flips to `generated`.
 - [ ] Generation context includes unclaimed participants and their admin-entered preferences; it does not limit planning to authenticated memberships.
 - [ ] Non-member POST → 403.
+
+## Updates (2026-06-10 — post T3.1/T2.2, free-tier switch)
+
+- Build on the REAL T3.1 interfaces: `travel_agent/graph.py` — `build_trip_agent_graph(trip_context, group_preferences)`, `validate_itinerary_grounding(...)`, `ToolCallBudget`; output schema `travel_agent/schemas.py:Itinerary`.
+- Preferences context = ALL participants (claimed + unclaimed via `GroupPreferencesEntry`), not just account-holding members — the participants roster is the planning unit.
+- Gemini now runs on the AI Studio free tier (`GOOGLE_GENAI_USE_VERTEXAI=0`). The free tier throws transient 503 "high demand" — the job must retry agent steps with backoff (2 retries) and only then mark `status: error`. Keep `estCostUsd` computed from pricing constants regardless of billing tier (it's a metric, not a bill).
+- The Vertex flip for demo day is one env var; do not hardcode either backend.

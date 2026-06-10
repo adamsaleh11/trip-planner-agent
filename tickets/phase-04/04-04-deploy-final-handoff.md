@@ -35,3 +35,9 @@ Ship both apps to production and produce the final architecture document — the
 - [ ] No secret exists in either repo or build artifact (grep + env audit); all prod secrets in Secret Manager/Vercel env.
 - [ ] Handoff doc complete with decision log, privacy model, real metrics, eval table, and the 10k-user scale section.
 - [ ] Fresh-clone local setup still works per READMEs (deploy didn't break dev).
+
+## Updates (2026-06-10 — free-tier switch, participants)
+
+- Secrets now include `GOOGLE_API_KEY` (AI Studio) and the `GOOGLE_GENAI_USE_VERTEXAI` flag. Decide at deploy: stay free-tier (rate limits shared across all prod users — fine for demo) or flip to Vertex for the interview demo (one env var; pennies). Document both in the handoff.
+- No Vector Search deploy step — retrieval is in-process (see T4.1 update). The handoff doc's scale section gains the `MemoryRetriever` swap story and the measured $3.25/day figure you actually saw from the old deployed index as the cost rationale.
+- Prod smoke test additions: admin creates an UNCLAIMED participant + fills their preferences → invite links/claims that participant → generation reflects them.

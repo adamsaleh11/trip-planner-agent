@@ -41,3 +41,12 @@ Close the product loop: completed trips become journal entries; members opt in t
 - [ ] Deletion proof: retrieval before/after `DELETE /me/shares/{id}` shows the entry gone from results and hydration collection.
 - [ ] Edits overwrite (no ghost duplicates) — deterministic-ID test.
 - [ ] A live generation's whyItFits can carry a travelers-tip citation sourced from seed data; journal entries remain members-only via API tests.
+
+## Updates (2026-06-10 — free-tier switch: NO hosted Vector Search)
+
+- **Retrieval backend changed to $0 mode**: keep the `search_collective_memory(destination, category, query)` interface exactly as specced, but implement it as in-process exact nearest-neighbor (cosine similarity) over `collectiveMemory/{opaqueId}` Firestore docs, which now also store the embedding vector. No index creation, no endpoint deploy, no hourly billing. At this corpus size results are identical to ANN.
+- **Embedding model**: `gemini-embedding-001` via the AI Studio key (3072 dims; free tier) — replaces `text-embedding-005`. Keep the model name + dims in config.
+- **Vector Search becomes the documented scale path**: implement retrieval behind a small `MemoryRetriever` interface so a `VertexVectorSearchRetriever` is a drop-in class; the handoff doc explains the swap trigger (corpus size / latency) — "right-sized retrieval, swappable backend" is the interview line. The optional demo-day deploy steps move to the handoff doc.
+- Everything else stands: opt-in default-false, PII scrub (flash), HMAC opaque IDs (`SERVER_HMAC_SECRET`), deletion map + endpoint, whim→journal endpoint, synthetic-only seed.
+- Group-size bucket counts PARTICIPANTS, not just account members.
+- Drop the "verify streaming index" task — obsolete in $0 mode.

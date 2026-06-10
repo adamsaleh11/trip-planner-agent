@@ -38,3 +38,7 @@ The marquee page: every trip in your journal as a glowing waypoint on a gorgeous
 - [ ] Only the signed-in user's trips are requested/rendered (network assertion in test).
 - [ ] Empty, loading, and mapbox-failure states all render intentionally; mobile bottom-sheet works at 375px.
 - [ ] Lighthouse/bundle sanity: mapbox-gl loaded only on /map.
+
+## Updates (2026-06-10 — post T2.2)
+
+- The trip sheet's "what everyone wanted" section is per-PARTICIPANT (claimed + unclaimed; use displayName from the participants roster), per the updated contract shapes.

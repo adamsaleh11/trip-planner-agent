@@ -38,3 +38,9 @@ An anytime, instant agent for "I'm bored": the user types whatever they feel lik
 - [ ] Randomness test: same request 5× with accumulating excludePlaceIds yields 5 distinct places (no repeats).
 - [ ] tripId path: non-member → 403; member gets trip-flavored suggestion (instruction content asserted in tests).
 - [ ] Whim docs persist with metrics; uid-scoped (users can only read their own whims).
+
+## Updates (2026-06-10 — post T3.1, free-tier switch)
+
+- Reuse T3.1's patterns: per-request agent build like `build_category_agent` in `travel_agent/graph.py`, `ToolCallBudget` for the 2-Places-query cap, and the same model config constant (AI Studio free tier; Vertex flip via env).
+- Free-tier 503s: one retry with short backoff, then a friendly "try again in a moment" error — never burn the ≤6s budget on long waits.
+- Trip-context whims read the PARTICIPANTS' preferences (GroupPreferencesEntry), same as generation.

@@ -39,3 +39,8 @@ The signature interaction: click Generate, watch six agents light up in real tim
 - [ ] Itinerary renders every stop field; suggested badges appear exactly where the data says; empty transport renders "Not available", never blank.
 - [ ] Regenerate produces a new run and the view swaps to the new itinerary on completion.
 - [ ] QA pass: progress panel + itinerary on mobile width; long venue names truncate gracefully; no listener leaks (verified via repeated mount/unmount).
+
+## Updates (2026-06-10 — post T3.1/T2.2)
+
+- Confirmation dialog lists PARTICIPANTS (claimed + unclaimed, e.g. "Mom — filled by Adam") and which categories are empty — use `/trips/{id}/preferences/status` (keyed by participantId now, per updated contract).
+- Generation may briefly retry on free-tier 503s — progress UI just keeps showing the running state; no special handling beyond the existing stale guard.

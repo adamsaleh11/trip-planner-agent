@@ -46,3 +46,9 @@ Make the agent system observable and evaluated — distributed traces per genera
 - [ ] `python -m evals.run` completes the golden set, writes evalRuns doc, prints aggregates; at least one full run committed as evidence.
 - [ ] Dashboard page renders recent generations with metrics + trace link-outs and eval history.
 - [ ] No preference free-text appears in span attributes (privacy check in tests).
+
+## Updates (2026-06-10 — free-tier switch)
+
+- Eval runner runs on the AI Studio free tier: pace cases sequentially and retry 503s with backoff; the rate limits, not cost, are the constraint now. `--cases` subset flag matters more.
+- Keep estCostUsd in metrics computed from pricing constants (it answers "what would this cost at scale" even when the bill is $0); add a `billingTier: free|vertex` field on generation metrics so the dashboard is honest.
+- Eval cases assemble preferences across PARTICIPANTS (claimed + unclaimed) — include one golden case where an admin filled an unclaimed participant's preferences.

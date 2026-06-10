@@ -38,3 +38,8 @@ The instant-gratification surface: a "Right Now" button available anywhere in th
 - [ ] Trip-context launch attaches tripId; travelersTip renders distinctly when the backend supplies one.
 - [ ] Geo-denied flow works end-to-end with typed city, and the choice is remembered.
 - [ ] QA pass: sheet on mobile 375px, animation tasteful, all error states styled, no console errors.
+
+## Updates (2026-06-10 — post T2.2)
+
+- Trip-page entry point lives on the trip detail screen built in T2.2; whim shape per contract §3.11 is unchanged.
+- "Save to journal" remains hidden until T4.1 ships the whim→journal endpoint.
