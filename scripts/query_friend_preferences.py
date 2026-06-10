@@ -49,7 +49,7 @@ def main():
     results = endpoint.find_neighbors(
         deployed_index_id=DEPLOYED_INDEX_ID,
         queries=[query_embedding],
-        num_neighbors=5,
+        num_neighbors=11,
     )
 
     print(f"Query: {query}")

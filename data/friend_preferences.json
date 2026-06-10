@@ -74,13 +74,14 @@
   {
     "friend_id": "shubh",
     "name": "Shubh",
-    "text": "Shubh likes structured schedules, being outside, local restaurants, and trying local food when vegetarian options are available. Shubh is the only vegetarian in the group, so restaurants should include reliable vegetarian-friendly options.",
+    "text": "Shubh likes structured schedules, being outside, local restaurants, and trying local food. Shubh prefers vegetarian options when convenient, but the itinerary should not be built around vegetarian-only restaurants.",
     "metadata": {
-      "diet": "vegetarian",
+      "diet": "vegetarian_preferred",
+      "diet_priority": "nice_to_have",
       "budget_style": "moderate",
       "pace": "medium",
-      "activity_style": ["vegetarian_food", "local_food", "restaurants", "outdoors", "structured_schedule"],
-      "constraints": ["vegetarian"]
+      "activity_style": ["local_food", "restaurants", "outdoors", "structured_schedule"],
+      "constraints": []
     }
   },
   {
