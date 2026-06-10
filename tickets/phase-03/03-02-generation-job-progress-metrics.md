@@ -1,52 +1,58 @@
-# T3.2 — Generation job: background execution, live progress, metrics
+# T3.2 — Generation jobs: per-category agent runs + coordinator, live progress, metrics
 
 Repo: trip-planner-agent (backend) · System: Mac · Type: FastAPI + ADK Runner
-Skill: tdd · Agent: CLAUDE CODE (backend) · Depends on: T3.1 · Parallel with: T2.3 (Codex)
-Plan: plans/trip-journal-pivot.md · Phase 3
+Skill: tdd · Agent: CLAUDE CODE (backend) · Depends on: T3.1 (done) · Parallel with: 02-03 (Gemini), 03-05 (Codex)
+Plan: plans/trip-journal-pivot.md · Phase 3 · Wave 1
+CONSOLIDATED 2026-06-10 — single source of truth; supersedes the earlier draft and its appended update notes. Includes: independent per-agent runs, participants model, AI Studio free-tier reality.
 
 ## Goal
 
-"Click Generate" becomes a 202 + background job driving `Runner.run_async`, streaming per-agent progress to a Firestore generations doc the frontend watches in realtime, recording LLM-native metrics on completion.
+Two execution surfaces over the T3.1 agent graph, both 202 + background job + Firestore live progress:
+1. **Per-category runs** — each of the 5 category agents is independently runnable and writes its own visible results doc (each agent gets its own UI panel on the frontend).
+2. **Coordinator run** — the itinerary agent composes from fresh stored category results + ALL participants' preferences, auto-running missing/stale categories first.
+
+## Build on (real, existing interfaces — do not reinvent)
+
+- `travel_agent/graph.py`: `build_category_agent(...)`, `build_coordinator_agent(...)`, `build_trip_agent_graph(...)`, `validate_itinerary_grounding(...)`, `ToolCallBudget`, `search_collective_memory` (stub until T4.1).
+- `travel_agent/schemas.py`: `CategoryCandidate`, `CategoryCandidateList`, `Itinerary` (+ blocks/stops).
+- `app/` platform: `Repository` (get/set/update/list), `require_member`/`require_admin` in `app/services/trips.py`, `GroupPreferencesEntry` in `app/models/preferences.py` — **the planning unit is PARTICIPANTS (claimed + unclaimed), not just account members**; auth dependency; structured logging with request_id.
+- Contract: `docs/contracts/trip-journal-api.md` §3.10 + §5.2 — the frontend mocks against these shapes. **If implementation diverges, update the contract in the same commit and announce it.**
 
 ## Responsibilities
 
-- `POST /trips/{id}/generate` (member-only): creates `trips/{id}/generations/{genId}` with `{status: running, phase: collecting_preferences, agentStatuses: {food_drink: pending, outdoors_scenic: pending, nightlife: pending, culture_local: pending, logistics: pending, coordinator: pending}, requestedBy, startedAt, traceId}` → returns 202 `{generationId}`.
-- Idempotency guard: if a generation for this trip is already `running` (and younger than a 5-min staleness cutoff), return 409 with the running generationId — double-clicks and racing members get the same job.
-- Background task (FastAPI BackgroundTasks): assembles trip context + all participant preferences (one Firestore read per participant doc, including unclaimed admin-created travelers), builds the agent graph (T3.1), iterates `run_async` events; maps agent start/finish events → `agentStatuses.{agent}: running|done` Firestore updates (real ADK event names verified against the installed version, not assumed).
-- Completion: writes `itinerary` (schema-validated), `status: complete`, `phase: done`, `metrics: {totalTokens, promptTokens, outputTokens, latencyMs, estCostUsd, llmCalls, toolCalls}` (token usage from ADK event usage metadata; cost from a flash-pricing constant in config).
-- Failure: any exception → `status: error`, `error: <user-readable message>`, full traceback logged with traceId; the doc never sticks in `running`.
-- Trip doc `status` → `generated` on first success; `latestGenerationId` pointer updated. Regeneration = new generation doc (history preserved).
-- Document Cloud Tasks as the production upgrade (durable dispatch, retries, instance-restart survival) in a short `docs/scale-notes.md` section — interview artifact.
+### 1. `POST /trips/{tripId}/categories/{category}/generate` — member only
+- 202 `{"category": "..."}`; 409 if that category is already `running` (younger than a 5-min staleness cutoff); 404 unknown category; 403 non-member.
+- Background task: assemble that category's context from all participants' preferences (empty category → T3.1 inference path), run the single category agent, write to `trips/{tripId}/categoryResults/{category}`:
+  `{status: running|complete|error, candidates: [CategoryCandidate dump incl. suggested flag], sourceParticipantIds, metrics, traceId, updatedAt, preferencesVersion, error?}`
+- `preferencesVersion` = max preference `updatedAt` for that category at run time. Reads expose advisory `stale: true|false` — never a hard block.
+
+### 2. `POST /trips/{tripId}/generate` — member only, the coordinator
+- 202 `{"generationId": "..."}`; 409 with the running generationId when one is in flight (client attaches, doesn't error).
+- Creates `trips/{tripId}/generations/{generationId}` per contract §5.2: `{status, phase, agentStatuses: {5 categories + coordinator}, requestedBy, startedAt, traceId}`.
+- Orchestration per category: fresh stored result (`preferencesVersion` >= current preference version) → reuse, `agentStatuses.{category}: "skipped_fresh"`; missing/stale → run in parallel (`pending → running → done`). Then the coordinator composes the `Itinerary` from category results + participants' preferences; schema-validate + `validate_itinerary_grounding` with one repair retry.
+- Completion: `itinerary`, `status: complete`, `phase: done`, `metrics: {totalTokens, promptTokens, outputTokens, latencyMs, estCostUsd, llmCalls, toolCalls, tokensPerSecond, billingTier: "free"|"vertex"}`. Trip status → `generated`; `latestGenerationId` updated; regeneration = new doc (history preserved).
+- Failure: `status: error` + user-readable message; traceback logged with traceId; the doc never sticks in `running`.
+
+### 3. Runtime/config hardening
+- Move env loading to explicit app startup with absolute paths (currently an import side-effect with a relative path in `travel_agent/tools/location_research.py` — breaks when the server starts from another CWD). Backend selection (`GOOGLE_GENAI_USE_VERTEXAI`) must be deterministic.
+- AI Studio free tier throws transient 503 "high demand": retry agent steps with backoff (2 retries) before marking error. `estCostUsd` always computed from pricing constants (it's a metric, not a bill); record `billingTier`. The Vertex flip is one env var — hardcode neither backend.
+- Document Cloud Tasks as the durable-queue production upgrade in `docs/scale-notes.md`.
 
 ## Tools / Interfaces
 
-- ADK `Runner` + `InMemorySessionService`; Firestore module from T1.1. Tests: fake runner emitting a scripted event sequence → assert the exact series of Firestore status writes; fake that raises mid-stream → assert error state lands.
-
-## Patterns
-
-- Status writes are merge-updates (never clobber the doc); every write carries traceId for log correlation.
-- The generations doc shape MUST match the contract (T1.4) — if reality diverges, update the contract file in the same commit and flag it.
-
-## Model routing
-
-- Inherits T3.1 (flash everywhere, config-driven).
+- ADK `Runner` + `InMemorySessionService` per job; FastAPI BackgroundTasks; Firestore via the existing `Repository`. Status writes are merge-updates (never clobber); every write carries traceId. Real ADK event names verified against the installed version (2.0.0b1), not assumed.
+- Tests: fake runner emitting scripted event sequences → assert the exact series of status writes for BOTH surfaces; mid-stream exception test; concurrent double-POST idempotency tests on both endpoints; reuse-vs-stale decision as a pure-function unit test on `preferencesVersion`.
 
 ## Cost rules
 
-- One generation = one runner session. Firestore progress writes ≤ ~15 per generation (status transitions only — no per-token writes).
+- One runner session per job. Reused fresh categories consume ZERO model calls — assert it. Status writes ≤ ~15 per coordinator run (transitions only, no per-token writes). Free-tier rate limits are the constraint, not dollars.
 
 ## Acceptance criteria
 
-- [ ] 202 + doc created on generate; concurrent second call → 409 with the live generationId (test with two simultaneous requests).
-- [ ] Scripted-runner test shows agentStatuses progressing pending→running→done in order, ending `status: complete` with itinerary + metrics populated.
-- [ ] Mid-stream exception test ends `status: error` with readable message; doc never left `running`.
-- [ ] Real end-to-end run: metrics show plausible non-zero tokens/latency/cost; traceId present; trip status flips to `generated`.
-- [ ] Generation context includes unclaimed participants and their admin-entered preferences; it does not limit planning to authenticated memberships.
-- [ ] Non-member POST → 403.
-
-## Updates (2026-06-10 — post T3.1/T2.2, free-tier switch)
-
-- Build on the REAL T3.1 interfaces: `travel_agent/graph.py` — `build_trip_agent_graph(trip_context, group_preferences)`, `validate_itinerary_grounding(...)`, `ToolCallBudget`; output schema `travel_agent/schemas.py:Itinerary`.
-- Preferences context = ALL participants (claimed + unclaimed via `GroupPreferencesEntry`), not just account-holding members — the participants roster is the planning unit.
-- Gemini now runs on the AI Studio free tier (`GOOGLE_GENAI_USE_VERTEXAI=0`). The free tier throws transient 503 "high demand" — the job must retry agent steps with backoff (2 retries) and only then mark `status: error`. Keep `estCostUsd` computed from pricing constants regardless of billing tier (it's a metric, not a bill).
-- The Vertex flip for demo day is one env var; do not hardcode either backend.
+- [ ] Single category run end-to-end: 202 → categoryResults doc progresses running → complete with grounded candidates; concurrent re-run → 409; non-member → 403.
+- [ ] Editing that category's preferences then reading its results shows `stale: true` (advisory).
+- [ ] Coordinator with mixed state: fresh categories show `skipped_fresh` and consume zero model calls; missing/stale auto-run; final itinerary is schema-valid with every stop's placeId traceable to tool output.
+- [ ] Scripted-runner tests prove the status sequences for both surfaces; mid-stream exception ends `status: error`, never stuck `running`.
+- [ ] Generation context includes unclaimed participants and their admin-entered preferences; planning is never limited to authenticated memberships.
+- [ ] Real live run (free tier) records plausible metrics incl. tokensPerSecond + billingTier; trip flips to `generated`.
+- [ ] Contract §3.10/§5.2 match reality at merge (updated in-commit if diverged); env loading is CWD-independent.

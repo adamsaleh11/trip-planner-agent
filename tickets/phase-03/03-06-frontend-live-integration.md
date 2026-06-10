@@ -28,3 +28,7 @@ Swap the mock-built generation and whim UIs onto the live backend and make the f
 - [ ] Live whim from the trip page returns a real venue ≤ ~10s incl. retry headroom; 5 rerolls = 5 distinct places.
 - [ ] Listener detaches on unmount/completion (verified via repeated navigation — no console leak warnings).
 - [ ] No contract divergences remain unreported; any found are listed in the completion summary.
+
+## Updates (2026-06-10 — per-agent runs)
+
+- Live-integrate the per-category agent panels too: run one category alone → results render; edit a preference → stale hint appears; full generate reuses fresh results (verify "skipped_fresh" renders as reused, not re-run).

@@ -44,3 +44,9 @@ The signature interaction: click Generate, watch six agents light up in real tim
 
 - Confirmation dialog lists PARTICIPANTS (claimed + unclaimed, e.g. "Mom — filled by Adam") and which categories are empty — use `/trips/{id}/preferences/status` (keyed by participantId now, per updated contract).
 - Generation may briefly retry on free-tier 503s — progress UI just keeps showing the running state; no special handling beyond the existing stale guard.
+
+## Updates (2026-06-10 — per-agent UI panels)
+
+- Each of the 5 category cards becomes an AGENT PANEL: "Run agent" button → live status (listener on `categoryResults/{category}`) → results list (venue, why-it-fits, suggested badge, travelers-tip slot) → rerun + stale hint ("preferences changed since this ran").
+- The Generate Itinerary button shows a pre-flight summary: which categories have fresh results (will be reused, "skipped_fresh"), which will auto-run. Progress panel renders reused categories as instantly-done with a "reused" marker.
+- Itinerary view unchanged. Mock-first still applies: mock both categoryResults docs and the generations doc.

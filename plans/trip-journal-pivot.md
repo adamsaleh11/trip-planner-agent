@@ -12,6 +12,7 @@ Durable decisions that apply across all phases:
 - **Key models**: `users`, `trips` (admin uid, destination, dates, lodging area/address text, status: planning|generated|completed), `memberships` (role: admin|member, access control only), `participants` (planning roster; can be unclaimed manual travelers or claimed by a uid), `invites` (token doc-ID, status), `preferences` (per trip+participant+category: structured chips + free text), `generations` (status per agent, trace_id, metrics, itinerary result), `journalEntries` (private by default), `collectiveMemoryMap` (private opaque-hash → owner mapping for deletion).
 - **Categories**: 5 fixed — Food & Drink, Outdoors & Scenic, Nightlife, Culture & Local, Logistics. One specialist agent each + a coordinator agent.
 - **Agents**: ADK agents constructed per-request with trip-parameterized instructions (no hardcoded people/rules). Coordinator fans out to category agents, merges into a structured itinerary: days → Morning/Afternoon/Evening blocks → timed stops with place_id, lat/lng, address, transport, "why it fits", and `suggested: true` on anything inferred. Empty category ⇒ agent infers from destination + other categories' filled preferences, all output flagged AI-suggested.
+- **Independent per-agent runs (2026-06-10)**: every category agent has its own UI panel and can be run standalone via `POST /trips/{id}/categories/{category}/generate`, writing candidates to `trips/{id}/categoryResults/{category}` (member-readable via listener). The coordinator/itinerary agent composes from fresh stored category results + all participants' preferences, auto-running missing/stale categories. Staleness (preferences edited after a run) is advisory in the UI.
 - **Generation execution**: `POST /trips/{id}/generate` returns 202; FastAPI background task drives `Runner.run_async`, streaming per-agent status to the trip's `generations` doc; frontend subscribes with a Firestore realtime listener. Cloud Tasks documented as the durable-queue production upgrade.
 - **"Right Now" spontaneity agent**: app-wide instant agent — user types any momentary whim (or nothing) + location (browser geolocation, active trip destination, or typed city) → ONE random real suggestion in ≤ ~6s. Single flash agent, synchronous request (deliberate contrast with the async multi-agent itinerary engine — execution model matched to latency budget). The LLM interprets the whim and queries Places; **code does the random pick** from qualified candidates (LLMs are biased samplers); reroll excludes already-shown places. Whims persist (`whims/{whimId}`, uid-scoped) with the same metrics shape as generations; trip-context whims get group flavor + collective-memory tips and can be saved into the trip journal.
 - **Preferences vs RAG split**: per-trip preferences are prompt-stuffed (small corpus; hard constraints like diet must never depend on retrieval recall). Vertex AI Vector Search serves only the **collective trip memory**.
@@ -78,20 +79,20 @@ The new Next.js repo, consuming the Phase 1 contract. After this phase a real us
 
 ## Phase 3: Generation engine — multi-agent itinerary, live progress, itinerary UI
 
-**User stories**: any member clicks Generate; watches agents work live; empty categories are AI-filled and labeled; the group gets a day-by-day itinerary with real venues.
+**User stories**: any member runs any category agent on its own and sees its recommendations; any member clicks Generate Itinerary; watches agents work live; empty categories are AI-filled and labeled; the group gets a day-by-day itinerary with real venues built from the category agents' results.
 
 ### What to build
 
-The core demo. Parameterized ADK agent graph + background execution + realtime progress + itinerary rendering.
+The core demo. Parameterized ADK agent graph + background execution + realtime progress + itinerary rendering. **Every agent is independently runnable with its own UI panel**: the 5 category agents each expose a run button and a visible results panel (stored in `trips/{id}/categoryResults/{category}`); the coordinator/itinerary agent composes from those stored results + all participants' preferences, auto-running any missing or stale category first.
 
 **Tickets**
 
 1. **T3.1 — Trip-parameterized agent graph** *(skill: tdd)*
    Rewrite agents: builder functions producing the 5 category agents + coordinator per request, instructions templated from trip context (destination, dates, lodging area/address, group size) + prompt-stuffed participant preferences; empty-category inference path with `suggested` flagging; structured itinerary output schema (Pydantic) the coordinator must satisfy; Places/Routes tools wired per category. Delete all hardcoded friend logic.
-2. **T3.2 — Generation job + progress + metrics** *(skill: tdd)*
-   `POST /trips/{id}/generate` (member-only, 202, idempotency guard against double-clicks); background task drives `Runner.run_async`, mapping events to per-agent status updates on the generation doc; on completion writes itinerary + metrics (trace_id, token counts, latency, est. cost); failure states recorded, job survivability notes for Cloud Tasks upgrade documented.
-3. **T3.3 — Generation UX + itinerary view** *(skill: frontend-tdd)*
-   Generate button with confirmation showing whose preferences are in; live progress panel (Firestore listener — 5 agents + coordinator with status animation); itinerary page: day sections, Morning/Afternoon/Evening blocks, timed stops with venue, address, transport, "why it fits", and visible "AI-suggested" badges; regenerate action.
+2. **T3.2 — Generation jobs (per-category + coordinator) + progress + metrics** *(skill: tdd)*
+   `POST /trips/{id}/categories/{category}/generate` (member-only, 202, per-category idempotency): runs ONE category agent, writes candidates + metrics + `preferencesVersion` to `trips/{id}/categoryResults/{category}`. `POST /trips/{id}/generate` (member-only, 202, idempotency guard): the coordinator — reuses fresh category results, auto-runs missing/stale ones, composes the itinerary; `agentStatuses` includes `skipped_fresh` for reused categories. Background tasks drive `Runner.run_async`, mapping events to status updates; completion writes itinerary + metrics (trace_id, tokens, latency, est. cost); failure states recorded; Cloud Tasks upgrade documented.
+3. **T3.3 — Per-agent panels + generation UX + itinerary view** *(skill: frontend-tdd)*
+   Each category card is an agent panel: Run button, live status (listener on `categoryResults/{category}`), candidate results list (venue, why-it-fits, suggested badge), stale-rerun hint when preferences changed after the run. Generate Itinerary button with pre-flight summary (which results are reused vs auto-run) and confirmation showing whose preferences are in; live progress panel (5 agents + coordinator; reused categories render instantly-done); itinerary page: day sections, Morning/Afternoon/Evening blocks, timed stops with venue, address, transport, "why it fits", visible "AI-suggested" badges; regenerate action.
 4. **T3.4 — "Right Now" spontaneity agent + API** *(skill: tdd)*
    `POST /whims` synchronous endpoint; single flash agent interprets the whim (time-of-day aware when empty), 1–2 Places queries, code-level random pick from qualified candidates, excludePlaceIds reroll support; trip-context flavor; whim docs persisted with metrics; collective-memory tip slot stubbed until Phase 4.
 5. **T3.5 — "Right Now" UI** *(skill: frontend-tdd)*
@@ -99,7 +100,8 @@ The core demo. Parameterized ADK agent graph + background execution + realtime p
 
 ### Acceptance criteria
 
-- [ ] Generate on a trip with mixed filled/empty categories produces a valid structured itinerary where every stop has a real Places place_id and inferred content is flagged `suggested`.
+- [ ] Any single category agent runs standalone from its panel and renders grounded candidates; editing that category's preferences afterwards surfaces a stale-rerun hint.
+- [ ] Generate Itinerary reuses fresh category results (`skipped_fresh` rendered as reused), auto-runs missing/stale ones, and produces a valid structured itinerary where every stop has a real Places place_id and inferred content is flagged `suggested`.
 - [ ] Progress UI shows agents transitioning pending → running → done live without polling code.
 - [ ] Generation doc records trace_id, tokens, latency, and cost for every run; double-click does not start a second job.
 - [ ] A failed generation surfaces a user-readable error state and is retryable.
