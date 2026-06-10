@@ -1,7 +1,7 @@
 # T3.5 — "Right Now" UI
 
 Repo: trip-journal-web (frontend) · System: Mac · Type: Next.js 15 app
-Skills: read-contract, frontend-tdd · Agent: Codex · Depends on: T2.1 shell + T1.4 contract (whim endpoint section) · Parallel with: T3.2/T3.4 (Claude)
+Skills: read-contract, frontend-tdd · Agent: CODEX (GPT 5.5, fullstack) · Depends on: T2.1 shell + T1.4 contract (whim endpoint section) · Parallel with: T3.2/T3.4 (Claude)
 Plan: ../trip-planner-agent/plans/trip-journal-pivot.md · Phase 3
 
 ## Goal

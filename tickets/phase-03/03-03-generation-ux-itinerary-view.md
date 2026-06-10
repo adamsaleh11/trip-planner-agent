@@ -1,7 +1,7 @@
 # T3.3 — Generation UX: live agent progress + itinerary view
 
 Repo: trip-journal-web (frontend) · System: Mac · Type: Next.js 15 app
-Skills: read-contract, frontend-tdd · Agent: Codex · Depends on: T2.3 + generations-doc shape from contract (T1.4); integrates with live T3.2 when it lands · Parallel with: T3.2/T4.1 (Claude)
+Skills: read-contract, frontend-tdd · Agent: GEMINI (Antigravity, frontend) · Depends on: T2.3 + generations-doc shape from contract (T1.4); integrates with live T3.2 when it lands · Parallel with: T3.2/T4.1 (Claude)
 Plan: ../trip-planner-agent/plans/trip-journal-pivot.md · Phase 3
 
 ## Goal

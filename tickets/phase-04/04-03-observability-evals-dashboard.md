@@ -1,7 +1,7 @@
-# T4.3 — Observability (OTel → Cloud Trace) + eval runner + dashboard
+# T4.3a — Observability (OTel → Cloud Trace) + eval runner (BACKEND ONLY)
 
 Repo: trip-planner-agent (backend) + trip-journal-web (dashboard page) · System: Mac · Type: OpenTelemetry + eval pipeline
-Skill: tdd · Agent: Claude (backend) with Codex assist on the dashboard page if free · Depends on: T3.2 · Parallel with: T4.2 (Codex)
+Skill: tdd · Agent: CLAUDE CODE (backend ONLY — dashboard UI moved to ticket 04-03b) · Depends on: T3.2 · Parallel with: T4.2 (Codex)
 Plan: plans/trip-journal-pivot.md · Phase 4
 
 ## Goal
@@ -52,3 +52,4 @@ Make the agent system observable and evaluated — distributed traces per genera
 - Eval runner runs on the AI Studio free tier: pace cases sequentially and retry 503s with backoff; the rate limits, not cost, are the constraint now. `--cases` subset flag matters more.
 - Keep estCostUsd in metrics computed from pricing constants (it answers "what would this cost at scale" even when the bill is $0); add a `billingTier: free|vertex` field on generation metrics so the dashboard is honest.
 - Eval cases assemble preferences across PARTICIPANTS (claimed + unclaimed) — include one golden case where an admin filled an unclaimed participant's preferences.
+- SPLIT (2026-06-10): this ticket is now 04-03a, BACKEND ONLY — OTel, eval runner, and THREE admin endpoints: `GET /admin/generations/recent`, `GET /admin/whims/recent`, `GET /admin/eval-runs` (shapes per ticket 04-03b, which owns the dashboard UI and was built against mocks of these).

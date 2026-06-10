@@ -1,7 +1,7 @@
 # T4.1 — Journal + anonymous collective trip memory (RAG)
 
 Repo: trip-planner-agent (backend) · System: Mac · Type: FastAPI + Vertex AI Vector Search
-Skill: tdd · Agent: Claude · Depends on: T3.2 · Parallel with: T3.3 then T4.2 (Codex)
+Skill: tdd · Agent: CLAUDE CODE (backend) · Depends on: T3.2 · Parallel with: T3.3 then T4.2 (Codex)
 Plan: plans/trip-journal-pivot.md · Phase 4
 
 ## Goal

@@ -1,7 +1,7 @@
 # T4.4 — Deploy (Cloud Run + Vercel) + final architecture handoff
 
 Repo: both · System: Mac · Type: Deployment + documentation
-Skill: contract-handoff · Agent: Claude (single agent — no parallel work during deploy) · Depends on: ALL previous tickets merged
+Skill: contract-handoff · Agent: CLAUDE CODE (SOLO — no other agents run during this ticket) · Depends on: ALL previous tickets merged
 Plan: plans/trip-journal-pivot.md · Phase 4 · FINAL TICKET
 
 ## Goal

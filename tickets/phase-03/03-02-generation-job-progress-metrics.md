@@ -1,7 +1,7 @@
 # T3.2 — Generation job: background execution, live progress, metrics
 
 Repo: trip-planner-agent (backend) · System: Mac · Type: FastAPI + ADK Runner
-Skill: tdd · Agent: Claude · Depends on: T3.1 · Parallel with: T2.3 (Codex)
+Skill: tdd · Agent: CLAUDE CODE (backend) · Depends on: T3.1 · Parallel with: T2.3 (Codex)
 Plan: plans/trip-journal-pivot.md · Phase 3
 
 ## Goal

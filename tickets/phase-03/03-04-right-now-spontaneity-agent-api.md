@@ -1,7 +1,7 @@
 # T3.4 — "Right Now" spontaneity agent + API
 
 Repo: trip-planner-agent (backend) · System: Mac · Type: Google ADK agent (single, synchronous)
-Skill: tdd · Agent: Claude · Depends on: T3.1 (reuses tools + builder patterns) · Parallel with: T2.3/T3.5 (Codex)
+Skill: tdd · Agent: CLAUDE CODE (backend) · Depends on: T3.1 (reuses tools + builder patterns) · Parallel with: T2.3/T3.5 (Codex)
 Plan: plans/trip-journal-pivot.md · Phase 3
 
 ## Goal

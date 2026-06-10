@@ -1,7 +1,7 @@
 # T4.2 — Journal map page (Mapbox heatmap + waypoints)
 
 Repo: trip-journal-web (frontend) · System: Mac · Type: Next.js 15 + Mapbox GL JS
-Skills: read-contract, frontend-tdd · Agent: Codex · Depends on: T2.2 (trip data), T3.3 (itinerary view reuse) · Parallel with: T4.1/T4.3 (Claude)
+Skills: read-contract, frontend-tdd · Agent: CODEX (GPT 5.5, fullstack) · Depends on: T2.2 (trip data), T3.3 (itinerary view reuse) · Parallel with: T4.1/T4.3 (Claude)
 Plan: ../trip-planner-agent/plans/trip-journal-pivot.md · Phase 4
 
 ## Goal

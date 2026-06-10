@@ -1,7 +1,7 @@
 # T2.3 — Category preference forms (5 categories)
 
 Repo: trip-journal-web (frontend) · System: Mac · Type: Next.js 15 app
-Skills: read-contract, frontend-tdd · Agent: Codex · Depends on: T2.2 · Parallel with: T3.2 (Claude)
+Skills: read-contract, frontend-tdd · Agent: GEMINI (Antigravity, frontend) · Depends on: T2.2 · Parallel with: T3.2 (Claude)
 Plan: ../trip-planner-agent/plans/trip-journal-pivot.md · Phase 2
 
 ## Goal
