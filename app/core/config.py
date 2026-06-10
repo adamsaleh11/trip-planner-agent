@@ -28,6 +28,9 @@ class Settings(BaseSettings):
     # Base URL used to build invite links
     frontend_url: str = "http://localhost:3000"
 
+    # ADK itinerary generation
+    agent_model: str = "gemini-2.5-flash"
+
 
 @lru_cache
 def get_settings() -> Settings:
