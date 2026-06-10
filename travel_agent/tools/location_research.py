@@ -1,12 +1,6 @@
-import os
-
 import requests
-from dotenv import load_dotenv
 
-
-load_dotenv("travel_agent/.env")
-
-API_KEY = os.environ["GOOGLE_MAPS_API_KEY"]
+from app.core.config import get_settings
 
 ROUTES_URL = "https://routes.googleapis.com/directions/v2:computeRoutes"
 
@@ -42,7 +36,7 @@ def search_places_text(query: str, max_result_count: int = 11) -> list[dict]:
         TEXT_SEARCH_URL,
         headers={
             "Content-Type": "application/json",
-            "X-Goog-Api-Key": API_KEY,
+            "X-Goog-Api-Key": _api_key(),
             "X-Goog-FieldMask": FIELD_MASK,
         },
         json={
@@ -151,7 +145,7 @@ def estimate_route_time(
         ROUTES_URL,
         headers={
             "Content-Type": "application/json",
-            "X-Goog-Api-Key": API_KEY,
+            "X-Goog-Api-Key": _routes_api_key(),
             "X-Goog-FieldMask": ROUTES_FIELD_MASK,
         },
         json={
@@ -190,3 +184,14 @@ def estimate_route_time(
         "duration": route.get("duration", "Not available"),
         "distance_meters": route.get("distanceMeters"),
     }
+
+
+def _api_key() -> str:
+    key = get_settings().google_maps_api_key
+    if not key:
+        raise RuntimeError("GOOGLE_MAPS_API_KEY is not configured")
+    return key
+
+
+def _routes_api_key() -> str:
+    return get_settings().google_routes_api_key or _api_key()

@@ -186,7 +186,7 @@ def _category_instruction(
         category_mode = (
             f"No member filled {category} preferences. Infer a best-fit {category} profile "
             "from the trip context and the other filled categories below. "
-            "Every candidate you output for this category must set suggested=true."
+            "Use suggested as item-level provenance, not as a category-level flag."
         )
 
     return f"""
@@ -219,7 +219,7 @@ Output rules:
 - category must be "{category}".
 - Every venue must come from search_location_options tool results.
 - Include name, place_id, address, lat, lng, why_it_fits, time_of_day_fit, estimated_price_level, suggested.
-- Preserve item-level suggested flags exactly: filled-preference items suggested=false, inferred padding suggested=true.
+- suggested is item-level provenance: set suggested=false only when the candidate directly traces to explicit current trip participant preferences; set suggested=true for generic, inferred, padding, or memory-inspired candidates that do not directly trace to those preferences.
 """.strip()
 
 

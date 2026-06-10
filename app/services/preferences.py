@@ -4,6 +4,8 @@ Membership controls trip access. Participants are the planning roster, so an
 admin can fill preferences for unclaimed traveler profiles before invites exist.
 """
 
+from datetime import datetime, timezone
+
 from fastapi import HTTPException
 from pydantic import ValidationError
 
@@ -20,6 +22,10 @@ from app.services import trips as trips_service
 
 def _prefs_collection(trip_id: str) -> str:
     return f"{trips_service.TRIPS_COLLECTION}/{trip_id}/preferences"
+
+
+def _now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def validate_category(category: str) -> type:
@@ -58,9 +64,17 @@ def save_participant_category(
         validated = model(**payload)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False))
+    existing = repo.get(_prefs_collection(trip_id), participant_id) or {}
+    updated_at = {**existing.get("_updatedAt", {}), category: _now()}
     repo.update(
-        _prefs_collection(trip_id), participant_id, {category: validated.model_dump()}
+        _prefs_collection(trip_id),
+        participant_id,
+        {category: validated.model_dump(), "_updatedAt": updated_at},
     )
+    result_collection = f"{trips_service.TRIPS_COLLECTION}/{trip_id}/categoryResults"
+    result = repo.get(result_collection, category)
+    if result is not None and result.get("status") == "complete":
+        repo.update(result_collection, category, {"stale": True})
     return get_participant_preferences(repo, trip_id, participant_id, user.uid)
 
 

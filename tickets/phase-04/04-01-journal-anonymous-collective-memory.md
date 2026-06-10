@@ -11,6 +11,7 @@ Close the product loop: completed trips become journal entries; members opt in t
 ## Responsibilities
 
 - `POST /trips/{id}/complete` (admin): trip status → `completed`; seeds `journalEntries` stubs per itinerary stop (placeId, name, category) ready for rating.
+- Manual plans from T3.4 remain first-class context after completion: if a manual plan was scheduled into the itinerary, its stop should seed a journal entry like any other itinerary stop. Do not drop manually-added plans when creating journal stubs.
 - Journal API: `PUT /trips/{id}/journal/{placeId}` per member `{rating 1-5, note (max 1000 chars), shareAnonymously: bool (default FALSE)}`; `GET /trips/{id}/journal` (members only — private by default, period).
 - Share pipeline (on save with shareAnonymously=true, re-run on edit):
   1. **PII scrub**: strip person names/handles/emails from the note via one flash call with a strict rewrite prompt ("remove names and identifying references, keep the tip") + regex pass for emails/phones/@handles.
@@ -41,6 +42,7 @@ Close the product loop: completed trips become journal entries; members opt in t
 - [ ] Deletion proof: retrieval before/after `DELETE /me/shares/{id}` shows the entry gone from results and hydration collection.
 - [ ] Edits overwrite (no ghost duplicates) — deterministic-ID test.
 - [ ] A live generation's whyItFits can carry a travelers-tip citation sourced from seed data; journal entries remain members-only via API tests.
+- [ ] Completing a trip whose itinerary includes an admin manual plan creates a journal entry for that planned stop.
 
 ## Updates (2026-06-10 — free-tier switch: NO hosted Vector Search)
 

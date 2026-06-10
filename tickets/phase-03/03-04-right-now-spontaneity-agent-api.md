@@ -1,4 +1,4 @@
-# T3.4 — "Right Now" spontaneity agent + API
+# T3.4 — "Right Now" spontaneity agent + API + manual plans backend patch
 
 Repo: trip-planner-agent (backend) · System: Mac · Type: Google ADK agent (single, synchronous)
 Skill: tdd · Agent: CLAUDE CODE (backend) · Depends on: T3.1 (reuses tools + builder patterns) · Parallel with: T2.3/T3.5 (Codex)
@@ -8,7 +8,46 @@ Plan: plans/trip-journal-pivot.md · Phase 3
 
 An anytime, instant agent for "I'm bored": the user types whatever they feel like doing in the moment ("something sweet", "I wanna dye my hair", "somewhere to watch the game", or literally nothing) and gets ONE random, real, open-now-biased suggestion nearby — in seconds, not minutes. Deliberately the architectural opposite of the itinerary engine: single agent, synchronous, cheap.
 
+**Wave 2 checkpoint correction, must-have**: add backend support for admin-authored manual plans and make the coordinator itinerary generator automatically include them as required context. Do this in this existing backend ticket; do not create a new ticket.
+
 ## Responsibilities
+
+### A. Manual plans backend patch — required before/alongside T3.3
+
+- Add a trip-scoped manual plans API:
+  - `GET /trips/{tripId}/manual-plans` — member-only, returns all manual plans for the trip.
+  - `POST /trips/{tripId}/manual-plans` — admin-only, creates a manual plan.
+  - `PATCH /trips/{tripId}/manual-plans/{planId}` — admin-only, edits a manual plan.
+  - `DELETE /trips/{tripId}/manual-plans/{planId}` — admin-only, removes a manual plan.
+- Manual plan shape is guided, not open-ended:
+  ```json
+  {
+    "id": "planId",
+    "category": "food_drink|outdoors_scenic|nightlife|culture_local|logistics",
+    "activity": "Dinner at Time Out Market",
+    "timeOfDay": "morning|afternoon|evening",
+    "date": "YYYY-MM-DD|null",
+    "placeId": "optional Google place id",
+    "address": "optional address",
+    "notes": "optional short admin note",
+    "createdByUid": "uid",
+    "createdAt": "iso",
+    "updatedAt": "iso"
+  }
+  ```
+- Validation rules:
+  - `category`, `activity`, and `timeOfDay` are required.
+  - `activity` is 1–160 chars; `notes` max 1000 chars.
+  - `date`, if provided, must fall inside the trip date range.
+  - Only admins can create/edit/delete; all members can read.
+- Coordinator generation must read manual plans for the trip and include them in the itinerary agent context every time.
+- Manual plans are **mandatory itinerary context**: the coordinator should schedule them when possible. If impossible because of date/location constraints, the generation doc should include a user-readable warning such as `manualPlanWarnings`, not silently ignore them.
+- Manual plans are distinct from preferences:
+  - Preferences say what people like.
+  - Manual plans are concrete commitments the admin already made.
+  - Manual plans should not be treated as AI-suggested; if they appear as stops, `suggested` should be `false` unless the final schema gains a richer provenance field later.
+
+### B. Right Now API
 
 - `POST /whims` (authenticated): body `{whimText: str (may be empty), location: {lat, lng} | {city: str}, tripId?: str, excludePlaceIds?: [str]}` → synchronous response `{suggestion: {placeId, name, address, lat, lng, category, whyThis, openNow|"Not available", mapsUri, travelersTip?}, whimId}`. Target p95 latency ≤ ~6s.
 - Location resolution: explicit lat/lng (browser geolocation) wins; else tripId → trip destination (member-checked); else city string; none → 422 with clear message.
@@ -33,6 +72,11 @@ An anytime, instant agent for "I'm bored": the user types whatever they feel lik
 
 ## Acceptance criteria
 
+- [ ] Manual plan CRUD exists with member-read/admin-write authorization and validation.
+- [ ] Manual plan date validation rejects dates outside the trip range.
+- [ ] Coordinator generation context includes all manual plans automatically, alongside all participants' preferences and all category results.
+- [ ] A generation with a manual plan produces an itinerary that includes/schedules that plan, or records a visible warning explaining why it could not.
+- [ ] Manual plans are not marked AI-suggested in the final itinerary.
 - [ ] Empty whim + lat/lng returns a real open-now-biased place with whyThis in ≤ ~6s (live test).
 - [ ] Oddball whims degrade gracefully: "I wanna dye my hair" returns a real salon/barber via Places; nonsense input returns a fun fallback suggestion, never a 500.
 - [ ] Randomness test: same request 5× with accumulating excludePlaceIds yields 5 distinct places (no repeats).

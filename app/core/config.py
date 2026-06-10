@@ -5,14 +5,19 @@ optional here so the service boots without them.
 """
 
 from functools import lru_cache
+from pathlib import Path
 from typing import Optional
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+ROOT_DIR = Path(__file__).resolve().parents[2]
+
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=(".env", "travel_agent/.env"), env_file_encoding="utf-8", extra="ignore"
+        env_file=(ROOT_DIR / ".env", ROOT_DIR / "travel_agent/.env"),
+        env_file_encoding="utf-8",
+        extra="ignore",
     )
 
     # Google Cloud / Firestore
@@ -30,9 +35,11 @@ class Settings(BaseSettings):
 
     # Google Places destination search
     google_maps_api_key: Optional[str] = None
+    google_routes_api_key: Optional[str] = None
 
     # ADK itinerary generation
     agent_model: str = "gemini-2.5-flash"
+    google_genai_use_vertexai: Optional[bool] = None
 
 
 @lru_cache

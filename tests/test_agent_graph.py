@@ -87,12 +87,14 @@ def test_category_agent_instruction_contains_trip_and_member_preferences():
     assert "suggested=false" in agent.instruction
 
 
-def test_empty_category_agent_uses_inference_context_and_marks_all_suggested():
+def test_empty_category_agent_uses_inference_context_and_item_level_suggested():
     agent = build_category_agent("nightlife", _trip(), _group())
 
     assert "No member filled nightlife preferences" in agent.instruction
     assert "Infer a best-fit nightlife profile" in agent.instruction
-    assert "Every candidate you output for this category must set suggested=true" in agent.instruction
+    assert "suggested is item-level provenance" in agent.instruction
+    assert "directly traces to explicit current trip participant preferences" in agent.instruction
+    assert "generic, inferred, padding, or memory-inspired" in agent.instruction
     assert "food_drink" in agent.instruction
     assert "Find grilled sardines" in agent.instruction
     assert "outdoors_scenic" in agent.instruction

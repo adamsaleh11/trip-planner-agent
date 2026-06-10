@@ -15,7 +15,7 @@ A systematic quality pass over the whole product before deploy: every screen, ev
 ## Responsibilities
 
 Run the full matrix and fix-or-file:
-- **Flows** (two accounts, real backend): sign-up/in/out both providers · create trip (destination autocomplete) · participants add/edit + admin-filled preferences · invite (email + copy link) → claim flow · all 5 preference forms · generate → progress → itinerary · regenerate · whim (geo, typed city, trip-context, rerolls) · map page interactions · dashboard.
+- **Flows** (two accounts, real backend): sign-up/in/out both providers · create trip (destination autocomplete) · participants add/edit + admin-filled preferences · invite (email + copy link) → claim flow · all 5 preference forms save and visibly reload · each category panel generates independently from its own button · admin manual plan add/edit/delete · generate includes all participants + manual plans → progress → itinerary · regenerate · whim (geo, typed city, trip-context, rerolls) · map page interactions · dashboard.
 - **States**: loading skeletons everywhere data loads; empty states (new user, no trips, no generations); error states (kill the backend mid-session — every screen should degrade, not crash); 401 redirect; 403 non-member page.
 - **Viewports**: 375px and 1280px on every screen; dark-theme consistency (no light-mode leaks in shadcn components).
 - **Hygiene**: zero console errors/warnings on a clean walkthrough; no Firestore listener leaks (navigate in/out of progress view 5×); `mapbox-gl` not in the main bundle; no secrets in the frontend bundle (`grep` the build output for `GOCSPX`, `1//`, `AQ.`).
@@ -24,6 +24,7 @@ Run the full matrix and fix-or-file:
 ## Acceptance criteria
 
 - [ ] Full flow matrix executed; results logged in `QA-FINDINGS.md` (including "pass" rows — it doubles as the pre-deploy checklist).
+- [ ] Must-have regression checks pass or are filed as blockers: saved preferences visible after refresh; five independent category generate buttons; itinerary based on all trip participants; admin manual plans included in generation.
 - [ ] All blockers either fixed (owned files) or filed with repro steps and owner.
 - [ ] Console-clean walkthrough; bundle checks pass (no mapbox-gl in main, no secret strings).
 - [ ] Zero edits to Gemini-owned (04-05) files or backend code (verify via git diff).
