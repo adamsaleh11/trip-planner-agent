@@ -36,7 +36,7 @@ def group_preferences(
     user: CurrentUser = Depends(get_current_user),
     repo: Repository = Depends(get_repository),
 ) -> list[GroupPreferencesEntry]:
-    """All members' preferences — the group plans together by design."""
+    """All participant preferences — the group plans together by design."""
     return prefs_service.get_group_preferences(repo, trip_id, user.uid)
 
 
@@ -48,5 +48,31 @@ def save_category(
     user: CurrentUser = Depends(get_current_user),
     repo: Repository = Depends(get_repository),
 ) -> MemberPreferences:
-    """Save the caller's preferences for one category (uid from token only)."""
+    """Save the caller's claimed participant preferences for one category."""
     return prefs_service.save_category(repo, trip_id, user, category, payload)
+
+
+@router.get("/participants/{participant_id}", response_model=MemberPreferences)
+def get_participant_preferences(
+    trip_id: str,
+    participant_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: Repository = Depends(get_repository),
+) -> MemberPreferences:
+    return prefs_service.get_participant_preferences(
+        repo, trip_id, participant_id, user.uid
+    )
+
+
+@router.put("/participants/{participant_id}/{category}", response_model=MemberPreferences)
+def save_participant_category(
+    trip_id: str,
+    participant_id: str,
+    category: str,
+    payload: dict = Body(...),
+    user: CurrentUser = Depends(get_current_user),
+    repo: Repository = Depends(get_repository),
+) -> MemberPreferences:
+    return prefs_service.save_participant_category(
+        repo, trip_id, participant_id, user, category, payload
+    )

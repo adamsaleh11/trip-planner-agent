@@ -13,7 +13,7 @@ The marquee page: every trip in your journal as a glowing waypoint on a gorgeous
 - `/map`: full-bleed Mapbox GL JS map, dark style (`mapbox://styles/mapbox/dark-v11`), token from `NEXT_PUBLIC_MAPBOX_TOKEN`, globe projection with subtle initial spin-to-fit over the user's trips.
 - Data: user's trips (destination lat/lng, name, dates, status, member count) via the API client. ONLY the signed-in user's trips — the map is personal; no other groups' data ever reaches this page.
 - Layers: (1) heatmap layer from trip points — soft warm glow (amber/coral ramp matching the app theme), radius/intensity tuned to look like an aura, weighted by stop count so bigger trips glow brighter; (2) waypoint layer on top — custom circular markers with pulse on hover; completed trips brighter than planning-stage ones.
-- Interaction: click/tap waypoint → `flyTo` (smooth ease, zoom ~10) → side sheet (desktop) / bottom sheet (mobile) with: trip name, dates, hero list of itinerary stops (compact reuse of T3.3 stop cards), member avatars, and a "what everyone wanted" section (per-member preference highlights: chips + a free-text quote line each).
+- Interaction: click/tap waypoint → `flyTo` (smooth ease, zoom ~10) → side sheet (desktop) / bottom sheet (mobile) with: trip name, dates, hero list of itinerary stops (compact reuse of T3.3 stop cards), member avatars, and a "what everyone wanted" section (per-participant preference highlights: chips + a free-text quote line each).
 - Cluster gracefully if two trips are near each other (Mapbox cluster or slight spiderfy on zoom).
 - Empty state (no trips): stylized globe + CTA to create a trip. Loading: map skeleton w/ shimmer. Mapbox failure (bad token/offline): fallback list view of trips, never a blank page.
 - Journal list toggle: switch between map and a chronological journal card list (same data, shared sheet component).
@@ -34,7 +34,7 @@ The marquee page: every trip in your journal as a glowing waypoint on a gorgeous
 ## Acceptance criteria
 
 - [ ] Map renders the user's trips as glowing heatmap-backed waypoints in dark theme; visually consistent with the app's accent palette (screenshot proof).
-- [ ] Click → flyTo → sheet shows itinerary stops, members, and per-member wants for that trip.
+- [ ] Click → flyTo → sheet shows itinerary stops, members, and per-participant wants for that trip.
 - [ ] Only the signed-in user's trips are requested/rendered (network assertion in test).
 - [ ] Empty, loading, and mapbox-failure states all render intentionally; mobile bottom-sheet works at 375px.
 - [ ] Lighthouse/bundle sanity: mapbox-gl loaded only on /map.

@@ -12,7 +12,7 @@ Plan: plans/trip-journal-pivot.md · Phase 3
 
 - `POST /trips/{id}/generate` (member-only): creates `trips/{id}/generations/{genId}` with `{status: running, phase: collecting_preferences, agentStatuses: {food_drink: pending, outdoors_scenic: pending, nightlife: pending, culture_local: pending, logistics: pending, coordinator: pending}, requestedBy, startedAt, traceId}` → returns 202 `{generationId}`.
 - Idempotency guard: if a generation for this trip is already `running` (and younger than a 5-min staleness cutoff), return 409 with the running generationId — double-clicks and racing members get the same job.
-- Background task (FastAPI BackgroundTasks): assembles trip context + all members' preferences (one Firestore read per member doc), builds the agent graph (T3.1), iterates `run_async` events; maps agent start/finish events → `agentStatuses.{agent}: running|done` Firestore updates (real ADK event names verified against the installed version, not assumed).
+- Background task (FastAPI BackgroundTasks): assembles trip context + all participant preferences (one Firestore read per participant doc, including unclaimed admin-created travelers), builds the agent graph (T3.1), iterates `run_async` events; maps agent start/finish events → `agentStatuses.{agent}: running|done` Firestore updates (real ADK event names verified against the installed version, not assumed).
 - Completion: writes `itinerary` (schema-validated), `status: complete`, `phase: done`, `metrics: {totalTokens, promptTokens, outputTokens, latencyMs, estCostUsd, llmCalls, toolCalls}` (token usage from ADK event usage metadata; cost from a flash-pricing constant in config).
 - Failure: any exception → `status: error`, `error: <user-readable message>`, full traceback logged with traceId; the doc never sticks in `running`.
 - Trip doc `status` → `generated` on first success; `latestGenerationId` pointer updated. Regeneration = new generation doc (history preserved).
@@ -41,4 +41,5 @@ Plan: plans/trip-journal-pivot.md · Phase 3
 - [ ] Scripted-runner test shows agentStatuses progressing pending→running→done in order, ending `status: complete` with itinerary + metrics populated.
 - [ ] Mid-stream exception test ends `status: error` with readable message; doc never left `running`.
 - [ ] Real end-to-end run: metrics show plausible non-zero tokens/latency/cost; traceId present; trip status flips to `generated`.
+- [ ] Generation context includes unclaimed participants and their admin-entered preferences; it does not limit planning to authenticated memberships.
 - [ ] Non-member POST → 403.

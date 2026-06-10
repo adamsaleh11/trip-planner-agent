@@ -1,7 +1,7 @@
-"""Preference storage: one doc per member per trip, one field per category.
+"""Preference storage: one doc per participant per trip, one field per category.
 
-The writing uid always comes from the verified token — a member can never
-write another member's preferences regardless of payload contents.
+Membership controls trip access. Participants are the planning roster, so an
+admin can fill preferences for unclaimed traveler profiles before invites exist.
 """
 
 from fastapi import HTTPException
@@ -32,23 +32,55 @@ def validate_category(category: str) -> type:
 def save_category(
     repo: Repository, trip_id: str, user: CurrentUser, category: str, payload: dict
 ) -> MemberPreferences:
+    participant = trips_service.find_participant_for_uid(repo, trip_id, user.uid)
+    if participant is None:
+        trips_service.require_member(repo, trip_id, user.uid)
+        raise HTTPException(status_code=404, detail="No participant claimed by user")
+    return save_participant_category(
+        repo, trip_id, participant.id, user, category, payload
+    )
+
+
+def save_participant_category(
+    repo: Repository,
+    trip_id: str,
+    participant_id: str,
+    user: CurrentUser,
+    category: str,
+    payload: dict,
+) -> MemberPreferences:
     model = validate_category(category)
-    trips_service.require_member(repo, trip_id, user.uid)
+    if not trips_service.can_write_participant_preferences(
+        repo, trip_id, participant_id, user.uid
+    ):
+        raise HTTPException(status_code=403, detail="Cannot edit this participant")
     try:
         validated = model(**payload)
     except ValidationError as exc:
         raise HTTPException(status_code=422, detail=exc.errors(include_url=False))
     repo.update(
-        _prefs_collection(trip_id), user.uid, {category: validated.model_dump()}
+        _prefs_collection(trip_id), participant_id, {category: validated.model_dump()}
     )
-    return get_my_preferences(repo, trip_id, user)
+    return get_participant_preferences(repo, trip_id, participant_id, user.uid)
 
 
 def get_my_preferences(
     repo: Repository, trip_id: str, user: CurrentUser
 ) -> MemberPreferences:
     trips_service.require_member(repo, trip_id, user.uid)
-    data = repo.get(_prefs_collection(trip_id), user.uid) or {}
+    participant = trips_service.find_participant_for_uid(repo, trip_id, user.uid)
+    if participant is None:
+        return MemberPreferences()
+    data = repo.get(_prefs_collection(trip_id), participant.id) or {}
+    return MemberPreferences(**data)
+
+
+def get_participant_preferences(
+    repo: Repository, trip_id: str, participant_id: str, uid: str
+) -> MemberPreferences:
+    trips_service.require_member(repo, trip_id, uid)
+    trips_service.get_participant(repo, trip_id, participant_id)
+    data = repo.get(_prefs_collection(trip_id), participant_id) or {}
     return MemberPreferences(**data)
 
 
@@ -56,14 +88,15 @@ def get_group_preferences(
     repo: Repository, trip_id: str, uid: str
 ) -> list[GroupPreferencesEntry]:
     trips_service.require_member(repo, trip_id, uid)
-    members = trips_service.list_members_raw(repo, trip_id)
+    participants = trips_service.list_participants_raw(repo, trip_id)
     entries = []
-    for member_uid, member in members:
-        data = repo.get(_prefs_collection(trip_id), member_uid) or {}
+    for participant_id, participant in participants:
+        data = repo.get(_prefs_collection(trip_id), participant_id) or {}
         entries.append(
             GroupPreferencesEntry(
-                uid=member_uid,
-                displayName=member.get("displayName"),
+                participantId=participant_id,
+                displayName=participant.get("displayName"),
+                claimedByUid=participant.get("claimedByUid"),
                 preferences=MemberPreferences(**data),
             )
         )
@@ -76,8 +109,9 @@ def get_completion_status(
     entries = get_group_preferences(repo, trip_id, uid)
     return [
         CompletionEntry(
-            uid=entry.uid,
+            participantId=entry.participantId,
             displayName=entry.displayName,
+            claimedByUid=entry.claimedByUid,
             filled={
                 category: getattr(entry.preferences, category) is not None
                 for category in CATEGORY_MODELS

@@ -9,7 +9,7 @@ Durable decisions that apply across all phases:
 - **Repos**: This repo = Python backend (FastAPI wrapping ADK Runner, Cloud Run target). New separate repo = Next.js 15 + shadcn frontend (Vercel target). Local-first development; deploy is the final ticket.
 - **Auth**: Firebase Auth (Google + email/password) on the client. FastAPI verifies ID tokens via `firebase-admin` on every request; every Firestore query is uid-scoped. No endpoint is reachable unauthenticated except invite-token lookup.
 - **Database**: Firestore (free tier). Uniqueness encoded in doc IDs: invites keyed by token, memberships at `trips/{tripId}/memberships/{userId}`. User doc carries `memberTripIds` array for the journal/map query.
-- **Key models**: `users`, `trips` (admin uid, destination, dates, status: planning|generated|completed), `memberships` (role: admin|member), `invites` (token doc-ID, status), `preferences` (per trip+user+category: structured chips + free text), `generations` (status per agent, trace_id, metrics, itinerary result), `journalEntries` (private by default), `collectiveMemoryMap` (private opaque-hash → owner mapping for deletion).
+- **Key models**: `users`, `trips` (admin uid, destination, dates, lodging area/address text, status: planning|generated|completed), `memberships` (role: admin|member, access control only), `participants` (planning roster; can be unclaimed manual travelers or claimed by a uid), `invites` (token doc-ID, status), `preferences` (per trip+participant+category: structured chips + free text), `generations` (status per agent, trace_id, metrics, itinerary result), `journalEntries` (private by default), `collectiveMemoryMap` (private opaque-hash → owner mapping for deletion).
 - **Categories**: 5 fixed — Food & Drink, Outdoors & Scenic, Nightlife, Culture & Local, Logistics. One specialist agent each + a coordinator agent.
 - **Agents**: ADK agents constructed per-request with trip-parameterized instructions (no hardcoded people/rules). Coordinator fans out to category agents, merges into a structured itinerary: days → Morning/Afternoon/Evening blocks → timed stops with place_id, lat/lng, address, transport, "why it fits", and `suggested: true` on anything inferred. Empty category ⇒ agent infers from destination + other categories' filled preferences, all output flagged AI-suggested.
 - **Generation execution**: `POST /trips/{id}/generate` returns 202; FastAPI background task drives `Runner.run_async`, streaming per-agent status to the trip's `generations` doc; frontend subscribes with a Firestore realtime listener. Cloud Tasks documented as the durable-queue production upgrade.
@@ -24,7 +24,7 @@ Durable decisions that apply across all phases:
 
 ## Phase 1: Backend platform — identity, trips, invites, preferences API
 
-**User stories**: create an account; create a trip; admin invites friends by email; invitee joins via link; members fill per-category preferences.
+**User stories**: create an account; create a trip; admin adds traveler profiles immediately; admin optionally invites friends by email later; travelers' preferences can be filled before everyone has an account.
 
 ### What to build
 
@@ -35,9 +35,9 @@ The complete multi-tenant API surface in this repo, verified end-to-end with tes
 1. **T1.1 — FastAPI skeleton + auth + data layer** *(skill: tdd)*
    App factory, Firebase ID-token verification dependency, Firestore client module, `GET /me` (auto-provisions user doc), structured JSON logging with request IDs from day one. Restructure repo: `app/` (api, services, models), keep `travel_agent/` tools.
 2. **T1.2 — Trips, memberships, invites, Gmail sender** *(skill: tdd)*
-   Trip CRUD with admin-role enforcement; invite create (token doc-ID) → Gmail API send + copyable link in response; `GET /invites/{token}` public lookup; accept endpoint creates membership + updates `memberTripIds`; members list endpoint.
+   Trip CRUD with admin-role enforcement; participant roster endpoints (`Add traveler` separate from invite); invite create (token doc-ID) → Gmail API send + copyable link in response; `GET /invites/{token}` public lookup; accept endpoint creates membership + updates `memberTripIds`; members list endpoint.
 3. **T1.3 — Preference API for 5 categories** *(skill: tdd)*
-   Pydantic schemas per category (structured chips: diet, budget, pace, transport, interests + free-text wishlist), save/read endpoints scoped to trip membership, per-member completion status endpoint for the trip dashboard.
+   Pydantic schemas per category (structured chips: diet, budget, pace, transport, interests + free-text wishlist), save/read endpoints scoped to trip membership, admin-on-behalf writes for unclaimed participants, per-participant completion status endpoint for the trip dashboard.
 4. **T1.4 — API contract handoff** *(skill: contract-handoff)*
    Generate `docs/contracts/trip-journal-api.md`: every route, auth header, request/response schema, Firestore collections the frontend reads directly (generations listener), error shapes. This is the frontend repo's source of truth.
 
@@ -52,7 +52,7 @@ The complete multi-tenant API surface in this repo, verified end-to-end with tes
 
 ## Phase 2: Frontend app shell — sign in → trip → invite → preferences
 
-**User stories**: sign up/sign in; see my trips; create a trip; invite by email; accept an invite; fill out category preference forms; see who has filled theirs.
+**User stories**: sign up/sign in; see my trips; create a trip; add traveler profiles; fill preferences for each traveler; optionally invite people later to claim/manage their profile.
 
 ### What to build
 
@@ -63,13 +63,13 @@ The new Next.js repo, consuming the Phase 1 contract. After this phase a real us
 1. **T2.1 — Scaffold + auth + API client** *(skills: read-contract, frontend-tdd)*
    Next.js 15 (App Router) + shadcn + Tailwind, Firebase Auth (Google + email/password) with sign-in page and session handling, typed API client attaching ID tokens, protected layout, app shell/nav with a travel-journal visual identity (dark, warm accents).
 2. **T2.2 — Trips dashboard + invite flow** *(skill: frontend-tdd)*
-   Trip list (journal-style cards), create-trip dialog (destination autocomplete via Places, dates), trip detail page with members; admin invite UI (email input → sent state + copyable link); `/invite/[token]` accept page handling signed-out → sign-in → accept.
+   Trip list (journal-style cards), create-trip dialog (destination autocomplete via Places, dates, lodging area/address), trip detail page with participants and members; admin Add Traveler UI separate from Invite UI; `/invite/[token]` accept page remains available but is not required to plan.
 3. **T2.3 — Category preference forms** *(skill: frontend-tdd)*
-   The 5 category forms: chip/toggle groups for structured fields + free-text wishlist with example placeholders drawn from real phrasing ("sunset hikes", "best gelato", "bar to watch the game"); per-member completion indicators on the trip page; empty categories clearly marked "AI will fill this".
+   The 5 category forms: chip/toggle groups for structured fields + free-text wishlist with example placeholders drawn from real phrasing ("sunset hikes", "best gelato", "bar to watch the game"); per-participant completion indicators on the trip page; empty categories clearly marked "AI will fill this".
 
 ### Acceptance criteria
 
-- [ ] Two different accounts can: sign in, one creates a trip, invites the other by email, the other accepts via the emailed link and sees the trip.
+- [ ] A creator can add unclaimed traveler profiles and fill preferences for them without sending invites; invite acceptance still works as an optional account-access flow.
 - [ ] All 5 category forms save and reload correctly; completion states update per member.
 - [ ] Unauthenticated users are routed to sign-in; non-members cannot open a trip page.
 - [ ] UI passes the frontend-tdd QA pass (states, responsive, dark mode consistent).
@@ -87,7 +87,7 @@ The core demo. Parameterized ADK agent graph + background execution + realtime p
 **Tickets**
 
 1. **T3.1 — Trip-parameterized agent graph** *(skill: tdd)*
-   Rewrite agents: builder functions producing the 5 category agents + coordinator per request, instructions templated from trip context (destination, dates, lodging area, group size) + prompt-stuffed member preferences; empty-category inference path with `suggested` flagging; structured itinerary output schema (Pydantic) the coordinator must satisfy; Places/Routes tools wired per category. Delete all hardcoded friend logic.
+   Rewrite agents: builder functions producing the 5 category agents + coordinator per request, instructions templated from trip context (destination, dates, lodging area/address, group size) + prompt-stuffed participant preferences; empty-category inference path with `suggested` flagging; structured itinerary output schema (Pydantic) the coordinator must satisfy; Places/Routes tools wired per category. Delete all hardcoded friend logic.
 2. **T3.2 — Generation job + progress + metrics** *(skill: tdd)*
    `POST /trips/{id}/generate` (member-only, 202, idempotency guard against double-clicks); background task drives `Runner.run_async`, mapping events to per-agent status updates on the generation doc; on completion writes itinerary + metrics (trace_id, token counts, latency, est. cost); failure states recorded, job survivability notes for Cloud Tasks upgrade documented.
 3. **T3.3 — Generation UX + itinerary view** *(skill: frontend-tdd)*

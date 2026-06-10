@@ -19,7 +19,13 @@ def create_invite(
     sender: InviteEmailSender = Depends(get_invite_sender),
 ) -> InviteCreated:
     return invites_service.create_invite(
-        repo, sender, get_settings().frontend_url, trip_id, user, payload.email
+        repo,
+        sender,
+        get_settings().frontend_url,
+        trip_id,
+        user,
+        str(payload.email),
+        payload.participantId,
     )
 
 

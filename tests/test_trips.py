@@ -43,6 +43,14 @@ def test_member_can_create_trip_and_becomes_admin(client, verifier):
     assert body["adminUid"] == "user-a"
     assert body["destination"]["lat"] == 38.7223
 
+    participants = client.get(
+        f"/trips/{body['id']}/participants", headers=_auth(token)
+    ).json()
+    assert len(participants) == 1
+    assert participants[0]["displayName"] == "Ada"
+    assert participants[0]["claimedByUid"] == "user-a"
+    assert participants[0]["isClaimed"] is True
+
 
 def test_creator_can_read_their_trip(client, verifier):
     token = make_user(verifier)
@@ -101,6 +109,51 @@ def test_non_admin_cannot_update_trip(client, verifier):
 
     response = client.patch(
         f"/trips/{trip_id}", json={"name": "hijack"}, headers=_auth(outsider)
+    )
+
+    assert response.status_code == 403
+
+
+def test_admin_can_add_manual_participant_without_invite(client, verifier):
+    owner = make_user(verifier, token="tok-a", uid="user-a")
+    trip_id = create_trip(client, owner).json()["id"]
+
+    response = client.post(
+        f"/trips/{trip_id}/participants",
+        json={
+            "displayName": "Mom",
+            "email": "MOM@EXAMPLE.COM",
+            "notes": "Prefers short walks",
+        },
+        headers=_auth(owner),
+    )
+
+    assert response.status_code == 201
+    participant = response.json()
+    assert participant["displayName"] == "Mom"
+    assert participant["email"] == "mom@example.com"
+    assert participant["claimedByUid"] is None
+    assert participant["isClaimed"] is False
+
+    participants = client.get(
+        f"/trips/{trip_id}/participants", headers=_auth(owner)
+    ).json()
+    assert {item["displayName"] for item in participants} == {"Ada", "Mom"}
+
+
+def test_non_admin_cannot_add_manual_participant(client, verifier, sender):
+    from tests.test_invites import invite
+
+    owner = make_user(verifier, token="tok-a", uid="user-a")
+    trip_id = create_trip(client, owner).json()["id"]
+    token = invite(client, owner, trip_id).json()["inviteUrl"].rsplit("/", 1)[-1]
+    member = make_user(verifier, token="tok-b", uid="user-b", name="Bea")
+    client.post(f"/invites/{token}/accept", headers=_auth(member))
+
+    response = client.post(
+        f"/trips/{trip_id}/participants",
+        json={"displayName": "Friend"},
+        headers=_auth(member),
     )
 
     assert response.status_code == 403

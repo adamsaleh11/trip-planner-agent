@@ -5,6 +5,8 @@ data layer are swapped for in-memory fakes via ``app.dependency_overrides`` so
 no network, emulator, or Docker is required.
 """
 
+from __future__ import annotations
+
 import pytest
 from fastapi.testclient import TestClient
 

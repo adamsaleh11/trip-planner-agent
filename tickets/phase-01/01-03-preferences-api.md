@@ -6,7 +6,7 @@ Plan: plans/trip-journal-pivot.md · Phase 1
 
 ## Goal
 
-Members save and read per-category preferences (structured chips + free-text wishlist) for a trip, and the trip dashboard can show who has filled what. This schema is the contract the category agents consume in Phase 3 — get it right here.
+Participants save and read per-category preferences (structured chips + free-text wishlist) for a trip, and the trip dashboard can show who has filled what. Admins can fill preferences for unclaimed traveler profiles before invites are sent. This schema is the contract the category agents consume in Phase 3 — get it right here.
 
 ## Responsibilities
 
@@ -17,9 +17,9 @@ Members save and read per-category preferences (structured chips + free-text wis
   - nightlife: vibe[] (clubs, bars, live_music, street_parties, chill_drinks, none), frequency (none/once_or_twice/most_nights), budget ($/$$/$$$).
   - culture_local: interests[] (markets, museums, landmarks, neighborhoods, local_events, side_quests), guidedTours (yes/no/maybe).
   - logistics: pace (relaxed/balanced/packed), wakeTime (early/mid/late), transport[] (walk, transit, rideshare, rental_car), dailyBudget ($/$$/$$$), mobilityNotes str.
-- Storage: `trips/{tripId}/preferences/{uid}` single doc with one field per category (null = not filled) — one read fetches a member's everything.
-- `PUT /trips/{id}/preferences/{category}` (member writes own only — uid from token, never from body), `GET /trips/{id}/preferences/me`, `GET /trips/{id}/preferences` (members only: all members' preferences — the group is planning together, visibility is intentional).
-- `GET /trips/{id}/preferences/status`: per member × category boolean matrix + counts, for dashboard completion chips.
+- Storage: `trips/{tripId}/preferences/{participantId}` single doc with one field per category (null = not filled) — one read fetches a participant's everything.
+- `PUT /trips/{id}/preferences/{category}` compatibility route for the caller's claimed participant; `GET /trips/{id}/preferences/me`; `GET/PUT /trips/{id}/preferences/participants/{participantId}[/{category}]`; `GET /trips/{id}/preferences` (members only: all participants' preferences — the group is planning together, visibility is intentional).
+- `GET /trips/{id}/preferences/status`: per participant × category boolean matrix + counts, for dashboard completion chips.
 
 ## Tools / Interfaces
 
@@ -32,12 +32,12 @@ Members save and read per-category preferences (structured chips + free-text wis
 
 ## Cost rules
 
-- One doc per member per trip keeps reads at members×1 for generation context assembly.
+- One doc per participant per trip keeps reads at participants×1 for generation context assembly.
 
 ## Acceptance criteria
 
 - [ ] Each of the 5 categories round-trips (PUT → GET) with full validation; invalid enum values → 422 with a clear field error.
-- [ ] A member cannot write another member's preferences (uid is taken from the token; attempts via crafted body are ignored/rejected — test proves it).
-- [ ] Status endpoint returns the correct member×category matrix after partial fills.
+- [ ] Admin can write any participant's preferences; a non-admin can write only their claimed participant's preferences.
+- [ ] Status endpoint returns the correct participant×category matrix after partial fills.
 - [ ] Non-members get 403 on every preference route.
 - [ ] Free text accepts emoji and multilingual content (the real user stories contain 🙏).

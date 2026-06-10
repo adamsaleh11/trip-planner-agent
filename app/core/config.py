@@ -12,7 +12,7 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=".env", env_file_encoding="utf-8", extra="ignore"
+        env_file=(".env", "travel_agent/.env"), env_file_encoding="utf-8", extra="ignore"
     )
 
     # Google Cloud / Firestore
@@ -27,6 +27,9 @@ class Settings(BaseSettings):
 
     # Base URL used to build invite links
     frontend_url: str = "http://localhost:3000"
+
+    # Google Places destination search
+    google_maps_api_key: Optional[str] = None
 
     # ADK itinerary generation
     agent_model: str = "gemini-2.5-flash"

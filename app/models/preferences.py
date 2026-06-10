@@ -93,12 +93,14 @@ class MemberPreferences(BaseModel):
 
 
 class GroupPreferencesEntry(BaseModel):
-    uid: str
+    participantId: str
     displayName: Optional[str] = None
+    claimedByUid: Optional[str] = None
     preferences: MemberPreferences
 
 
 class CompletionEntry(BaseModel):
-    uid: str
+    participantId: str
     displayName: Optional[str] = None
+    claimedByUid: Optional[str] = None
     filled: dict[str, bool]

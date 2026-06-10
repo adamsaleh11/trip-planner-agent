@@ -32,6 +32,7 @@ def _group() -> list[GroupPreferencesEntry]:
         GroupPreferencesEntry.model_validate(
             {
                 "uid": "u1",
+                "participantId": "p1",
                 "displayName": "Alex",
                 "preferences": {
                     "food_drink": {
@@ -51,6 +52,7 @@ def _group() -> list[GroupPreferencesEntry]:
         GroupPreferencesEntry.model_validate(
             {
                 "uid": "u2",
+                "participantId": "p2",
                 "displayName": "Blair",
                 "preferences": {
                     "food_drink": {
@@ -219,7 +221,9 @@ def test_all_categories_are_supported():
         "logistics",
     ]
     empty_group = [
-        GroupPreferencesEntry(uid="empty", displayName=None, preferences=MemberPreferences())
+        GroupPreferencesEntry(
+            participantId="empty", displayName=None, preferences=MemberPreferences()
+        )
     ]
     assert {build_category_agent(category, _trip(), empty_group).name for category in CATEGORY_ORDER} == {
         f"{category}_agent" for category in CATEGORY_ORDER

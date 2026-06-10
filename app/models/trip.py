@@ -1,6 +1,6 @@
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, EmailStr, Field
 
 
 class Destination(BaseModel):
@@ -46,3 +46,26 @@ class Member(BaseModel):
 
 class MemberList(BaseModel):
     members: List[Member]
+
+
+class ParticipantCreate(BaseModel):
+    displayName: str = Field(min_length=1, max_length=120)
+    email: Optional[EmailStr] = None
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class ParticipantUpdate(BaseModel):
+    displayName: Optional[str] = Field(default=None, min_length=1, max_length=120)
+    email: Optional[EmailStr] = None
+    notes: Optional[str] = Field(default=None, max_length=1000)
+
+
+class Participant(BaseModel):
+    id: str
+    displayName: str
+    email: Optional[EmailStr] = None
+    notes: Optional[str] = None
+    createdByUid: str
+    claimedByUid: Optional[str] = None
+    isClaimed: bool = False
+    createdAt: str

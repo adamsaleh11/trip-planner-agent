@@ -1,4 +1,4 @@
-from typing import Literal
+from typing import Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -16,8 +16,8 @@ class CategoryCandidate(BaseModel):
     name: str = Field(min_length=1)
     place_id: str = Field(min_length=1)
     address: str
-    lat: float | None = None
-    lng: float | None = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
     why_it_fits: str = Field(min_length=1)
     time_of_day_fit: Literal["morning", "afternoon", "evening", "flexible"]
     estimated_price_level: str = "Not available"
@@ -44,8 +44,8 @@ class ItineraryStop(BaseModel):
     placeId: str = Field(min_length=1)
     name: str = Field(min_length=1)
     address: str
-    lat: float | None = None
-    lng: float | None = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
     category: Category
     transport: Transport
     whyItFits: str = Field(min_length=1)

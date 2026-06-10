@@ -1,13 +1,17 @@
+from typing import Optional
+
 from pydantic import BaseModel, EmailStr
 
 
 class InviteRequest(BaseModel):
     email: EmailStr
+    participantId: Optional[str] = None
 
 
 class InviteCreated(BaseModel):
     inviteUrl: str
     emailSent: bool
+    participantId: Optional[str] = None
 
 
 class InvitePreview(BaseModel):
@@ -19,3 +23,4 @@ class InvitePreview(BaseModel):
 
 class InviteAccepted(BaseModel):
     tripId: str
+    participantId: Optional[str] = None

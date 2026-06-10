@@ -6,6 +6,8 @@ between writes leaves a retryable state (membership first, status last —
 a pending invite with an existing membership simply re-converges on retry).
 """
 
+from __future__ import annotations
+
 import logging
 import secrets
 from datetime import datetime, timezone
@@ -31,20 +33,31 @@ def create_invite(
     trip_id: str,
     admin: CurrentUser,
     email: str,
+    participant_id: str | None = None,
 ) -> InviteCreated:
     trip = trips_service.require_admin(repo, trip_id, admin.uid)
+    linked_participant = None
+    if participant_id:
+        linked_participant = trips_service.get_participant(repo, trip_id, participant_id)
+    else:
+        linked_participant = trips_service.find_unclaimed_participant_by_email(
+            repo, trip_id, email
+        )
     token = secrets.token_urlsafe(24)
     invite_url = f"{frontend_url.rstrip('/')}/invite/{token}"
+    invite_doc = {
+        "email": email.lower(),
+        "tripId": trip_id,
+        "invitedBy": admin.uid,
+        "status": "pending",
+        "createdAt": datetime.now(timezone.utc).isoformat(),
+    }
+    if linked_participant is not None:
+        invite_doc["participantId"] = linked_participant.id
     repo.set(
         INVITES_COLLECTION,
         token,
-        {
-            "email": email,
-            "tripId": trip_id,
-            "invitedBy": admin.uid,
-            "status": "pending",
-            "createdAt": datetime.now(timezone.utc).isoformat(),
-        },
+        invite_doc,
     )
     html = render_invite_email(trip.name, admin.display_name or "", invite_url)
     email_sent = sender.send_invite(
@@ -54,7 +67,11 @@ def create_invite(
         "invite created",
         extra={"trip_id": trip_id, "email_sent": email_sent},
     )
-    return InviteCreated(inviteUrl=invite_url, emailSent=email_sent)
+    return InviteCreated(
+        inviteUrl=invite_url,
+        emailSent=email_sent,
+        participantId=linked_participant.id if linked_participant else None,
+    )
 
 
 def _get_invite_or_404(repo: Repository, token: str) -> dict:
@@ -84,11 +101,17 @@ def accept_invite(repo: Repository, token: str, user: CurrentUser) -> dict:
             return {"tripId": invite["tripId"]}  # idempotent re-accept
         raise HTTPException(status_code=410, detail="Invite already used")
 
-    trips_service.add_member(repo, invite["tripId"], user)
+    participant = trips_service.add_member(
+        repo,
+        invite["tripId"],
+        user,
+        participant_id=invite.get("participantId"),
+        invite_email=invite.get("email"),
+    )
     repo.update(
         INVITES_COLLECTION,
         token,
         {"status": "accepted", "acceptedBy": user.uid},
     )
     logger.info("invite accepted", extra={"trip_id": invite["tripId"]})
-    return {"tripId": invite["tripId"]}
+    return {"tripId": invite["tripId"], "participantId": participant.id}

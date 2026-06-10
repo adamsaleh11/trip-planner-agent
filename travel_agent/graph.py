@@ -305,7 +305,7 @@ def _format_member_category(entry: GroupPreferencesEntry, category: Category) ->
 
 
 def _member_label(entry: GroupPreferencesEntry) -> str:
-    return entry.displayName or entry.uid
+    return entry.displayName or entry.participantId
 
 
 def _collect_place_ids(results: Any) -> set[str]:

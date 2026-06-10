@@ -10,7 +10,7 @@ The signature interaction: click Generate, watch six agents light up in real tim
 
 ## Responsibilities
 
-- Generate button (replaces T2.3 placeholder): confirmation dialog summarizing what feeds the run — which members' preferences are in, which categories are empty ("AI will fill: Nightlife, Logistics"). Any member can generate.
+- Generate button (replaces T2.3 placeholder): confirmation dialog summarizing what feeds the run — which participants' preferences are in, which travelers/categories are empty ("AI will fill: Sarah / Nightlife, Logistics"). Any member can generate.
 - POST generate → navigate to/overlay the progress view; handle 409 (already running) by attaching to the running generation, not erroring.
 - Live progress panel: Firestore client SDK realtime listener on `trips/{id}/generations/{genId}` (direct Firestore read per contract — no polling). Six rows (5 category agents + coordinator) with named, icon'd cards animating pending → running (pulse) → done (check) → error. Phase label ("Researching food & drink…"). Tasteful, not noisy.
 - Error state: readable message + Retry (new POST). Stale guard: if doc stops updating > 3 min, show a soft warning with retry option.
@@ -34,6 +34,7 @@ The signature interaction: click Generate, watch six agents light up in real tim
 ## Acceptance criteria
 
 - [ ] With a mocked doc walked through its states, the panel animates correctly through all six agents, including the error path.
+- [ ] Confirmation dialog names participants/travelers, not only authenticated members, and includes unclaimed admin-created travelers.
 - [ ] Live integration: real generate shows real-time transitions without refresh; 409 attaches to the in-flight run (test by double-clicking).
 - [ ] Itinerary renders every stop field; suggested badges appear exactly where the data says; empty transport renders "Not available", never blank.
 - [ ] Regenerate produces a new run and the view swaps to the new itinerary on completion.

@@ -10,6 +10,14 @@ def invite(client, token, trip_id, email="friend@example.com"):
     )
 
 
+def invite_participant(client, token, trip_id, participant_id, email):
+    return client.post(
+        f"/trips/{trip_id}/invites",
+        json={"email": email, "participantId": participant_id},
+        headers=_auth(token),
+    )
+
+
 def test_admin_invite_sends_email_and_returns_link(client, verifier, sender):
     token = make_user(verifier)
     trip_id = create_trip(client, token).json()["id"]
@@ -83,6 +91,49 @@ def test_accept_creates_membership_and_is_idempotent(client, verifier, sender):
     assert roles == {"user-a": "admin", "user-b": "member"}
     my_trips = client.get("/trips", headers=_auth(invitee)).json()
     assert [t["id"] for t in my_trips] == [trip_id]
+
+
+def test_accept_claims_existing_admin_created_participant(client, verifier, sender):
+    owner = make_user(verifier, token="tok-a", uid="user-a")
+    trip_id = create_trip(client, owner).json()["id"]
+    participant = client.post(
+        f"/trips/{trip_id}/participants",
+        json={"displayName": "Sarah placeholder", "email": "sarah@example.com"},
+        headers=_auth(owner),
+    ).json()
+    client.put(
+        f"/trips/{trip_id}/preferences/participants/{participant['id']}/food_drink",
+        json={"freeText": "Vegetarian-friendly cafes"},
+        headers=_auth(owner),
+    )
+    invite_token = invite_participant(
+        client, owner, trip_id, participant["id"], "sarah@example.com"
+    ).json()["inviteUrl"].rsplit("/", 1)[-1]
+    invitee = make_user(
+        verifier,
+        token="tok-b",
+        uid="user-b",
+        name="Sarah",
+    )
+
+    accepted = client.post(f"/invites/{invite_token}/accept", headers=_auth(invitee))
+
+    assert accepted.status_code == 200
+    assert accepted.json()["participantId"] == participant["id"]
+    participants = client.get(
+        f"/trips/{trip_id}/participants", headers=_auth(owner)
+    ).json()
+    assert len(participants) == 2  # owner + Sarah, no duplicate Sarah
+    sarah = next(item for item in participants if item["id"] == participant["id"])
+    assert sarah["displayName"] == "Sarah"
+    assert sarah["claimedByUid"] == "user-b"
+    assert sarah["isClaimed"] is True
+    prefs = client.get(f"/trips/{trip_id}/preferences", headers=_auth(owner)).json()
+    by_participant = {entry["participantId"]: entry for entry in prefs}
+    assert (
+        by_participant[participant["id"]]["preferences"]["food_drink"]["freeText"]
+        == "Vegetarian-friendly cafes"
+    )
 
 
 def test_accept_requires_auth(client, verifier, sender):

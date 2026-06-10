@@ -10,11 +10,12 @@ Produce `docs/contracts/trip-journal-api.md` — the single source of truth the 
 
 ## Responsibilities
 
-- Document every route from T1.1–T1.3: method, path, auth requirement, request schema, response schema, error shapes (401/403/404/410/422) with example JSON for each.
+- Document every route from T1.1–T1.3: method, path, auth requirement, request schema, response schema, error shapes (401/403/404/409/410/422) with example JSON for each.
 - Document the auth handshake: Firebase client SDK → ID token → `Authorization: Bearer` header; token refresh expectations; which Firebase project/config the frontend uses.
 - Document Firestore collections the frontend reads DIRECTLY via the client SDK (bypassing the API): `trips/{id}/generations/{genId}` realtime listener for generation progress (write the planned doc shape now — agentStatuses map {agent → pending|running|done|error}, phase, itinerary, metrics, error — so T3.3 can build against a mock before T3.2 lands).
 - Document forward-declared Phase 3/4 routes as PLANNED (generate endpoint, `POST /whims` request/response for the Right Now feature, journal endpoints, map data endpoint) with their expected shapes, clearly marked non-final. The whims shape must be firm enough for T3.5 to build against a mock (synchronous response — no listener).
-- Include the category preference schemas verbatim (field names, enums) — these become the frontend form types.
+- Include participant roster semantics verbatim: participants are the planning roster; memberships are access control; Add Traveler is separate from Invite Traveler; invite acceptance can claim/overwrite an existing unclaimed participant while preserving its preferences.
+- Include the category preference schemas verbatim (field names, enums) and participant-scoped preference routes — these become the frontend form types.
 - Include environment contract for the frontend repo: `NEXT_PUBLIC_API_BASE_URL`, Firebase web config keys, `NEXT_PUBLIC_MAPBOX_TOKEN` (reserved for T4.2).
 
 ## Tools / Interfaces
