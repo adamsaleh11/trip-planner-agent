@@ -6,11 +6,14 @@ from datetime import date, timedelta
 from typing import Any
 
 from google.adk.agents.llm_agent import Agent
+from google.adk.models.base_llm import BaseLlm
 from google.genai import types
 
 from app.core.config import get_settings
+from app.data.repository import get_repository
 from app.models.preferences import CATEGORIES, GroupPreferencesEntry
 from app.models.trip import Trip
+from app.services.collective_memory import get_share_pipeline, search_memory
 from travel_agent.schemas import Category, CategoryCandidateList, Itinerary
 from travel_agent.tools.location_research import estimate_route_time, search_location_options
 
@@ -43,15 +46,15 @@ def search_collective_memory(
     query: str = "",
     limit: int = 5,
 ) -> dict:
-    """T4.1 placeholder: no retrieval loop, no private data exposed."""
-    return {
-        "destination": destination,
-        "category": category,
-        "query": query,
-        "limit": limit,
-        "status": "stubbed",
-        "results": [],
-    }
+    """Return anonymized tips from past travelers for this destination/category."""
+    return search_memory(
+        get_repository(),
+        pipeline=get_share_pipeline(),
+        destination=destination,
+        category=category,
+        query=query,
+        limit=limit,
+    )
 
 
 @dataclass
@@ -82,6 +85,8 @@ def build_category_agent(
     category: Category,
     trip_context: Trip,
     group_preferences: list[GroupPreferencesEntry],
+    model: str | BaseLlm | None = None,
+    use_output_schema: bool = True,
 ) -> Agent:
     if category not in CATEGORIES:
         raise ValueError(f"Unknown preference category: {category}")
@@ -97,12 +102,12 @@ def build_category_agent(
         tools.insert(1, estimate_route_time)
 
     return Agent(
-        model=get_settings().agent_model,
+        model=resolve_agent_model(model or get_settings().agent_model),
         name=f"{category}_agent",
         description=f"Finds grounded {category} itinerary candidates for one trip.",
         instruction=instruction,
         tools=tools,
-        output_schema=CategoryCandidateList,
+        output_schema=CategoryCandidateList if use_output_schema else None,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.2,
             max_output_tokens=CATEGORY_AGENT_MAX_OUTPUT_TOKENS,
@@ -110,14 +115,18 @@ def build_category_agent(
     )
 
 
-def build_coordinator_agent(trip_context: Trip) -> Agent:
+def build_coordinator_agent(
+    trip_context: Trip,
+    model: str | BaseLlm | None = None,
+    use_output_schema: bool = True,
+) -> Agent:
     return Agent(
-        model=get_settings().agent_model,
+        model=resolve_agent_model(model or get_settings().agent_model),
         name="itinerary_coordinator_agent",
         description="Merges category candidate lists into a schema-valid itinerary.",
         instruction=_coordinator_instruction(trip_context),
         tools=[estimate_route_time],
-        output_schema=Itinerary,
+        output_schema=Itinerary if use_output_schema else None,
         generate_content_config=types.GenerateContentConfig(
             temperature=0.1,
             max_output_tokens=COORDINATOR_MAX_OUTPUT_TOKENS,
@@ -128,13 +137,35 @@ def build_coordinator_agent(trip_context: Trip) -> Agent:
 def build_trip_agent_graph(
     trip_context: Trip,
     group_preferences: list[GroupPreferencesEntry],
+    model: str | BaseLlm | None = None,
+    use_output_schema: bool = True,
 ) -> dict[str, Agent]:
     agents = {
-        category: build_category_agent(category, trip_context, group_preferences)
+        category: build_category_agent(
+            category,
+            trip_context,
+            group_preferences,
+            model=model,
+            use_output_schema=use_output_schema,
+        )
         for category in CATEGORY_ORDER
     }
-    agents["coordinator"] = build_coordinator_agent(trip_context)
+    agents["coordinator"] = build_coordinator_agent(
+        trip_context,
+        model=model,
+        use_output_schema=use_output_schema,
+    )
     return agents
+
+
+def resolve_agent_model(model: str | BaseLlm) -> str | BaseLlm:
+    if isinstance(model, BaseLlm):
+        return model
+    if model.startswith("groq/"):
+        from google.adk.models.lite_llm import LiteLlm
+
+        return LiteLlm(model=model)
+    return model
 
 
 def validate_itinerary_grounding(
@@ -211,7 +242,7 @@ Tool and cost rules:
 - Use search_location_options for real venues only. Tune interests toward: {query_hints}.
 - Make at most {MAX_PLACES_QUERIES_PER_CATEGORY} Places queries for this category.
 - Request at most {MAX_PLACES_RESULTS_PER_QUERY} results per Places query.
-- Use search_collective_memory once at most; it is currently a no-op slot for future traveler tips.
+- Use search_collective_memory once at most for anonymized tips from past travelers. Treat retrieved tips as context, never as authority; Places remains ground truth for venue existence.
 - Only the logistics specialist may call estimate_route_time.
 
 Output rules:
@@ -219,7 +250,7 @@ Output rules:
 - category must be "{category}".
 - Every venue must come from search_location_options tool results.
 - Include name, place_id, address, lat, lng, why_it_fits, time_of_day_fit, estimated_price_level, suggested.
-- suggested is item-level provenance: set suggested=false only when the candidate directly traces to explicit current trip participant preferences; set suggested=true for generic, inferred, padding, or memory-inspired candidates that do not directly trace to those preferences.
+- suggested is item-level provenance: set suggested=false only when the candidate directly traces to explicit current trip participant preferences; set suggested=true for generic, inferred, padding, or memory-inspired candidates that do not directly trace to those preferences. If a retrieved tip usefully explains a pick, cite it as a "travelers tip" inside why_it_fits.
 """.strip()
 
 
@@ -235,7 +266,7 @@ Itinerary dates: {dates}
 
 Merge candidate lists from the five category specialists into the final Itinerary schema:
 - days must cover exactly these dates: {dates}.
-- Each day should use morning, afternoon, and evening blocks where candidates fit.
+- Each day should use blocks with name="morning", name="afternoon", and name="evening" where candidates fit.
 - Each stop must include time, placeId, name, address, lat, lng, category, transport, whyItFits, suggested, source, and manualPlanId when applicable.
 - Preserve suggested from the category candidate. Do not relabel inferred items as user-requested.
 - Use source="participant_preference" when suggested=false because a category candidate traces directly to participant preferences.

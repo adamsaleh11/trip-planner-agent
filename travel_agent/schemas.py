@@ -1,6 +1,6 @@
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, Field, field_validator
 
 
 Category = Literal[
@@ -57,7 +57,9 @@ class ItineraryStop(BaseModel):
 
 
 class ItineraryBlock(BaseModel):
-    period: Literal["morning", "afternoon", "evening"]
+    name: Literal["morning", "afternoon", "evening"] = Field(
+        validation_alias=AliasChoices("name", "period")
+    )
     stops: list[ItineraryStop]
 
 

@@ -87,6 +87,19 @@ def test_category_agent_instruction_contains_trip_and_member_preferences():
     assert "suggested=false" in agent.instruction
 
 
+def test_agent_builders_accept_model_override():
+    category_agent = build_category_agent(
+        "food_drink",
+        _trip(),
+        _group(),
+        model="gemini-3.5-flash",
+    )
+    coordinator = build_coordinator_agent(_trip(), model="gemini-3.1-flash-lite")
+
+    assert category_agent.model == "gemini-3.5-flash"
+    assert coordinator.model == "gemini-3.1-flash-lite"
+
+
 def test_empty_category_agent_uses_inference_context_and_item_level_suggested():
     agent = build_category_agent("nightlife", _trip(), _group())
 

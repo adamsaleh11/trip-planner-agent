@@ -1,4 +1,5 @@
 from datetime import datetime, timezone
+from types import SimpleNamespace
 
 from app.core.auth import CurrentUser
 
@@ -180,6 +181,56 @@ class ScriptedGenerationRunner:
         }
 
 
+def test_adk_runner_tries_next_model_on_quota_error(monkeypatch):
+    from app.services import generation
+
+    attempts = []
+    runner = generation.AdkGenerationRunner()
+
+    monkeypatch.setattr(
+        "app.core.config.get_settings",
+        lambda: SimpleNamespace(
+            google_api_key=None,
+            groq_api_key=None,
+            google_genai_use_vertexai=None,
+            agent_model_sequence=[
+                "gemini-2.5-flash",
+                "gemini-3.5-flash",
+                "gemini-3.1-flash-lite",
+            ]
+        ),
+    )
+
+    def fake_run_schema_agent(*, agent, schema, message, user_id, session_id):
+        attempts.append((agent.model, session_id))
+        if agent.model == "gemini-2.5-flash":
+            raise RuntimeError("429 RESOURCE_EXHAUSTED quota exceeded")
+        return "output", {"llmCalls": 1}, []
+
+    monkeypatch.setattr(generation, "_run_schema_agent", fake_run_schema_agent)
+
+    output, metrics, tool_results = runner._run_with_model_fallbacks(
+        build_agent=lambda model, use_output_schema: SimpleNamespace(model=model),
+        schema=object,
+        message="go",
+        user_id="trace",
+        session_id="trace-food",
+        model_sequence=[
+            "gemini-2.5-flash",
+            "gemini-3.5-flash",
+            "gemini-3.1-flash-lite",
+        ],
+    )
+
+    assert output == "output"
+    assert metrics == {"llmCalls": 1}
+    assert tool_results == []
+    assert attempts == [
+        ("gemini-2.5-flash", "trace-food-gemini-2.5-flash"),
+        ("gemini-3.5-flash", "trace-food-gemini-3.5-flash"),
+    ]
+
+
 def test_member_can_generate_one_category_result(client, verifier, repo):
     from app.services.generation import get_generation_runner
 
@@ -305,6 +356,29 @@ def test_coordinator_reuses_fresh_category_results(client, verifier, repo):
             "manualPlanActivities": [],
         }
     ]
+
+
+def test_only_trip_admin_can_generate_full_itinerary(client, verifier, repo):
+    from app.services.generation import get_generation_runner
+    from app.services.trips import add_member
+
+    runner = ScriptedGenerationRunner()
+    client.app.dependency_overrides[get_generation_runner] = lambda: runner
+    owner = _user(verifier)
+    member = _user(verifier, token="tok-b", uid="user-b", name="Bea")
+    trip_id = _create_trip(client, owner)
+    add_member(
+        repo,
+        trip_id,
+        CurrentUser(uid="user-b", email="user-b@x.com", display_name="Bea"),
+    )
+
+    response = client.post(f"/trips/{trip_id}/generate", headers=_auth(member))
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Admin role required"
+    assert runner.category_calls == []
+    assert runner.coordinator_calls == []
 
 
 def test_coordinator_receives_manual_plans_without_rerunning_categories(

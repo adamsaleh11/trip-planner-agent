@@ -96,9 +96,16 @@ def request_category_generation(
         category,
         {
             "status": "running",
+            "candidates": [],
+            "sourceParticipantIds": [],
+            "metrics": _empty_metrics(),
             "traceId": trace_id,
             "updatedAt": _now(),
             "startedAt": _now(),
+            "preferencesVersion": _preferences_version(repo, trip_id, category),
+            "stale": False,
+            "fallback": False,
+            "fallbackReason": None,
             "error": None,
         },
     )
@@ -121,7 +128,7 @@ def request_trip_generation(
     trip_id: str,
     runner: GenerationRunner,
 ) -> dict[str, str]:
-    trip = trips_service.require_member(repo, trip_id, user.uid)
+    trip = trips_service.require_admin(repo, trip_id, user.uid)
     running_generation = _running_generation_id(repo, trip_id)
     if running_generation:
         raise HTTPException(
@@ -207,9 +214,19 @@ def _run_category_job(
             category,
             {
                 "status": "error",
+                "candidates": [],
+                "sourceParticipantIds": [],
+                "metrics": _empty_metrics(),
                 "traceId": trace_id,
                 "updatedAt": _now(),
-                "error": "Category generation failed. Please try again.",
+                "preferencesVersion": _preferences_version(repo, trip.id, category),
+                "stale": False,
+                "fallback": False,
+                "fallbackReason": None,
+                "error": _user_generation_error(
+                    exc,
+                    "Category generation failed. Please try again.",
+                ),
                 "errorDetail": str(exc),
             },
         )
@@ -332,7 +349,7 @@ def _run_trip_generation_job(
                 "status": "error",
                 "phase": "done",
                 "updatedAt": _now(),
-                "error": "Trip generation failed. Please try again.",
+                "error": _user_generation_error(exc, "Trip generation failed. Please try again."),
                 "errorDetail": str(exc),
             },
         )
@@ -429,7 +446,71 @@ def _empty_metrics() -> dict[str, Any]:
     }
 
 
+def _settings():
+    from app.core.config import get_settings
+
+    return get_settings()
+
+
+def _configure_llm_environment() -> None:
+    settings = _settings()
+    if settings.google_api_key:
+        os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
+    if settings.groq_api_key:
+        os.environ.setdefault("GROQ_API_KEY", settings.groq_api_key)
+    if settings.google_genai_use_vertexai is not None:
+        os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = (
+            "true" if settings.google_genai_use_vertexai else "false"
+        )
+
+
+def _use_adk_output_schema(model: str) -> bool:
+    # Groq rejects response_format/json mode combined with tool calling. Keep
+    # ADK tools enabled and validate the final JSON text locally instead.
+    return not model.startswith("groq/")
+
+
+def _model_message(message: str, schema, use_output_schema: bool) -> str:
+    if use_output_schema:
+        return message
+    schema_json = json.dumps(schema.model_json_schema(), sort_keys=True)
+    return (
+        f"{message}\n\n"
+        "Return only valid JSON matching this JSON Schema. Do not wrap it in "
+        f"markdown or prose.\nJSON Schema: {schema_json}"
+    )
+
+
 class AdkGenerationRunner:
+    def _run_with_model_fallbacks(
+        self,
+        *,
+        build_agent,
+        schema,
+        message: str,
+        user_id: str,
+        session_id: str,
+        model_sequence: list[str],
+    ):
+        last_error: Exception | None = None
+        _configure_llm_environment()
+        for model in model_sequence:
+            try:
+                use_output_schema = _use_adk_output_schema(model)
+                return _run_schema_agent(
+                    agent=build_agent(model, use_output_schema),
+                    schema=schema,
+                    message=_model_message(message, schema, use_output_schema),
+                    user_id=user_id,
+                    session_id=f"{session_id}-{model}",
+                )
+            except Exception as exc:
+                last_error = exc
+                if _should_try_next_model(exc):
+                    continue
+                raise
+        raise RuntimeError(f"All configured LLM models failed: {last_error}")
+
     def run_category(
         self,
         *,
@@ -441,13 +522,19 @@ class AdkGenerationRunner:
         from travel_agent.graph import build_category_agent
         from travel_agent.schemas import CategoryCandidateList
 
-        agent = build_category_agent(category, trip, group_preferences)
-        output, metrics, tool_results = _run_schema_agent(
-            agent=agent,
+        output, metrics, tool_results = self._run_with_model_fallbacks(
+            build_agent=lambda model, use_output_schema: build_category_agent(
+                category,
+                trip,
+                group_preferences,
+                model=model,
+                use_output_schema=use_output_schema,
+            ),
             schema=CategoryCandidateList,
             message=f"Generate grounded {category} candidates for this trip now.",
             user_id=trace_id,
             session_id=f"{trace_id}-{category}",
+            model_sequence=_settings().agent_category_model_sequence,
         )
         return {
             "candidates": [candidate.model_dump() for candidate in output.candidates],
@@ -467,7 +554,6 @@ class AdkGenerationRunner:
         from travel_agent.graph import build_coordinator_agent
         from travel_agent.schemas import Itinerary
 
-        agent = build_coordinator_agent(trip)
         message = json.dumps(
             {
                 "categoryResults": category_results,
@@ -478,12 +564,17 @@ class AdkGenerationRunner:
             },
             sort_keys=True,
         )
-        output, metrics, tool_results = _run_schema_agent(
-            agent=agent,
+        output, metrics, tool_results = self._run_with_model_fallbacks(
+            build_agent=lambda model, use_output_schema: build_coordinator_agent(
+                trip,
+                model=model,
+                use_output_schema=use_output_schema,
+            ),
             schema=Itinerary,
             message=message,
             user_id=trace_id,
             session_id=f"{trace_id}-coordinator",
+            model_sequence=_settings().agent_coordinator_model_sequence,
         )
         return {
             "itinerary": output.model_dump(),
@@ -514,9 +605,14 @@ class AdkGenerationRunner:
             )
             for entry in group_preferences
         ]
-        agent = build_category_agent(category, trip, generic_preferences)
-        output, metrics, tool_results = _run_schema_agent(
-            agent=agent,
+        output, metrics, tool_results = self._run_with_model_fallbacks(
+            build_agent=lambda model, use_output_schema: build_category_agent(
+                category,
+                trip,
+                generic_preferences,
+                model=model,
+                use_output_schema=use_output_schema,
+            ),
             schema=CategoryCandidateList,
             message=(
                 f"Generate fallback {category} candidates after {reason}. "
@@ -525,6 +621,7 @@ class AdkGenerationRunner:
             ),
             user_id=trace_id,
             session_id=f"{trace_id}-{category}-fallback",
+            model_sequence=_settings().agent_category_model_sequence,
         )
         return {
             "candidates": [candidate.model_dump() for candidate in output.candidates],
@@ -538,18 +635,20 @@ def _run_schema_agent(agent, schema, message: str, user_id: str, session_id: str
     from google.adk.sessions import InMemorySessionService
     from google.genai import types
 
+    _configure_llm_environment()
+
     last_error: Exception | None = None
     for attempt in range(3):
         start = time.monotonic()
         try:
             session_service = InMemorySessionService()
             session_service.create_session_sync(
-                app_name="trip-planner-agent",
+                app_name="trip_planner_agent",
                 user_id=user_id,
                 session_id=session_id,
             )
             runner = Runner(
-                app_name="trip-planner-agent",
+                app_name="trip_planner_agent",
                 agent=agent,
                 session_service=session_service,
             )
@@ -577,11 +676,39 @@ def _run_schema_agent(agent, schema, message: str, user_id: str, session_id: str
 
 def _extract_schema_output(events: list[Any], schema):
     for event in reversed(events):
+        error_code = getattr(event, "error_code", None)
+        error_message = getattr(event, "error_message", None)
+        if error_code or error_message:
+            raise RuntimeError(
+                ": ".join(
+                    part
+                    for part in [str(error_code or ""), str(error_message or "")]
+                    if part
+                )
+            )
         output = getattr(event, "output", None)
         if output is not None:
             return schema.model_validate(output)
+        actions = getattr(event, "actions", None)
+        model_response = getattr(actions, "set_model_response", None)
+        if model_response is not None:
+            return schema.model_validate(model_response)
         content = getattr(event, "content", None)
         for part in getattr(content, "parts", []) or []:
+            function_call = getattr(part, "function_call", None)
+            if (
+                function_call is not None
+                and getattr(function_call, "name", None) == "set_model_response"
+            ):
+                return schema.model_validate(getattr(function_call, "args", {}) or {})
+            response = getattr(part, "function_response", None)
+            if response is not None and getattr(response, "name", None) == "set_model_response":
+                response_payload = (
+                    getattr(response, "response", None)
+                    or getattr(response, "result", None)
+                    or {}
+                )
+                return schema.model_validate(response_payload)
             text = getattr(part, "text", None)
             if text:
                 try:
@@ -637,6 +764,43 @@ def _tool_results_from_events(events: list[Any]) -> list[dict[str, Any]]:
 def _is_transient_llm_error(exc: Exception) -> bool:
     text = str(exc).lower()
     return "503" in text or "high demand" in text or "unavailable" in text
+
+
+def _should_try_next_model(exc: Exception) -> bool:
+    text = str(exc).lower()
+    return (
+        "resource_exhausted" in text
+        or "quota exceeded" in text
+        or "429" in text
+        or "rate limit" in text
+        or "too many requests" in text
+        or "requests per minute" in text
+        or "requests per day" in text
+        or "tokens per minute" in text
+        or "tokens per day" in text
+        or "json mode cannot be combined with tool/function calling" in text
+        or "reasoning_content" in text
+        or ("model" in text and "404" in text)
+        or ("model" in text and "not found" in text)
+        or ("model" in text and "not supported" in text)
+    )
+
+
+def _user_generation_error(exc: Exception, fallback: str) -> str:
+    text = str(exc).lower()
+    if "json mode cannot be combined" in text or "reasoning_content" in text:
+        return (
+            "Configured LLM model is incompatible with the agent tool loop. "
+            "Switch to a model that supports tool calling in this runner."
+        )
+    if _should_try_next_model(exc):
+        return (
+            "LLM provider quota or rate limits are exhausted for this project. "
+            "Try again after the quota window resets or switch to a paid tier."
+        )
+    if _is_transient_llm_error(exc):
+        return "Gemini is temporarily overloaded. Try again in a minute."
+    return fallback
 
 
 def _billing_tier() -> str:

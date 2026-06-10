@@ -7,6 +7,7 @@ from app.api import (
     generation,
     health,
     invites,
+    journal,
     manual_plans,
     me,
     places,
@@ -27,6 +28,8 @@ def create_app() -> FastAPI:
     """
     configure_logging()
     settings = get_settings()
+    if settings.google_api_key:
+        os.environ.setdefault("GOOGLE_API_KEY", settings.google_api_key)
     if settings.google_genai_use_vertexai is not None:
         os.environ["GOOGLE_GENAI_USE_VERTEXAI"] = (
             "true" if settings.google_genai_use_vertexai else "false"
@@ -57,6 +60,7 @@ def create_app() -> FastAPI:
     app.include_router(preferences.router)
     app.include_router(manual_plans.router)
     app.include_router(generation.router)
+    app.include_router(journal.router)
     app.include_router(whims.router)
 
     return app

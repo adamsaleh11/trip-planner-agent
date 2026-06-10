@@ -44,6 +44,7 @@ def create_whim(
     user: CurrentUser,
     payload: WhimRequest,
     runner: WhimRunner,
+    memory_pipeline,
 ) -> WhimResponse:
     trace_id = uuid.uuid4().hex
     trip: Trip | None = None
@@ -63,6 +64,14 @@ def create_whim(
         trace_id=trace_id,
     )
     suggestion = WhimSuggestion(**output["suggestion"])
+    if trip is not None:
+        _attach_travelers_tip(
+            repo,
+            suggestion,
+            trip.destination.text,
+            payload.whimText or suggestion.name,
+            memory_pipeline,
+        )
     whim_id = uuid.uuid4().hex
     repo.set(
         WHIMS_COLLECTION,
@@ -79,6 +88,29 @@ def create_whim(
         },
     )
     return WhimResponse(suggestion=suggestion, whimId=whim_id)
+
+
+def _attach_travelers_tip(
+    repo: Repository,
+    suggestion: WhimSuggestion,
+    destination: str,
+    query: str,
+    memory_pipeline,
+) -> None:
+    from app.services.collective_memory import search_memory
+
+    results = search_memory(
+        repo,
+        pipeline=memory_pipeline,
+        destination=destination,
+        category=suggestion.category,
+        query=query,
+        limit=5,
+    )
+    for result in results["results"]:
+        if result.get("placeId") == suggestion.placeId:
+            suggestion.travelersTip = result.get("text")
+            return
 
 
 def _resolve_location_context(payload: WhimRequest, trip: Trip | None) -> dict[str, Any]:

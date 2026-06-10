@@ -1,0 +1,28 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isTripMember(tripId) {
+      return signedIn()
+        && exists(/databases/$(database)/documents/trips/$(tripId)/memberships/$(request.auth.uid));
+    }
+
+    match /trips/{tripId}/generations/{generationId} {
+      allow read: if isTripMember(tripId);
+      allow write: if false;
+    }
+
+    match /trips/{tripId}/categoryResults/{category} {
+      allow read: if isTripMember(tripId);
+      allow write: if false;
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
