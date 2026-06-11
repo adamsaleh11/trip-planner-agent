@@ -83,17 +83,28 @@ def update_journal_entry(
     if data is None:
         raise HTTPException(status_code=404, detail="Journal entry not found")
     entry = JournalEntry(**data)
+    if payload.shareAnonymously and payload.rating is None:
+        raise HTTPException(
+            status_code=422,
+            detail="Rating is required to share anonymously",
+        )
     shared_opaque_id = None
+    share_anonymously = payload.shareAnonymously
+    share_error = None
     existing_contribution = repo.get(_contributions_collection(trip_id, entry_id), uid)
     if payload.shareAnonymously:
-        shared_opaque_id = collective_memory.upsert_share(
-            repo,
-            trip=trip,
-            uid=uid,
-            entry=entry,
-            payload=payload,
-            pipeline=pipeline,
-        )
+        try:
+            shared_opaque_id = collective_memory.upsert_share(
+                repo,
+                trip=trip,
+                uid=uid,
+                entry=entry,
+                payload=payload,
+                pipeline=pipeline,
+            )
+        except Exception:
+            share_anonymously = False
+            share_error = "share_failed"
     elif existing_contribution and existing_contribution.get("sharedOpaqueId"):
         collective_memory.delete_share(
             repo, uid, existing_contribution["sharedOpaqueId"]
@@ -101,8 +112,9 @@ def update_journal_entry(
     contribution = JournalContribution(
         rating=payload.rating,
         note=payload.note,
-        shareAnonymously=payload.shareAnonymously,
+        shareAnonymously=share_anonymously,
         sharedOpaqueId=shared_opaque_id,
+        shareError=share_error,
         updatedAt=_now(),
     )
     repo.set(

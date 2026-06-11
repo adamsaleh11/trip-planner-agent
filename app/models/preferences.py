@@ -7,9 +7,26 @@ reject junk now so agent prompts never see garbage later.
 
 from typing import List, Literal, Optional
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-Budget = Literal["$", "$$", "$$$"]
+BudgetCurrency = Literal["USD", "CAD"]
+
+# Average spend the member picked on the budget slider. Legacy documents
+# stored "$" / "$$" / "$$$"; those coerce to representative USD amounts so
+# old preferences keep validating.
+LEGACY_BUDGET_AMOUNTS = {"$": 30, "$$": 75, "$$$": 150}
+
+
+class Budget(BaseModel):
+    amount: int = Field(ge=0, le=500)
+    currency: BudgetCurrency = "USD"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_legacy_tier(cls, value):
+        if isinstance(value, str) and value in LEGACY_BUDGET_AMOUNTS:
+            return {"amount": LEGACY_BUDGET_AMOUNTS[value], "currency": "USD"}
+        return value
 
 FREE_TEXT = Field(default="", max_length=2000)
 

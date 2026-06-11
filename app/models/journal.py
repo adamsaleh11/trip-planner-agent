@@ -16,6 +16,7 @@ class JournalContribution(BaseModel):
     note: str = Field(default="", max_length=1000)
     shareAnonymously: bool = False
     sharedOpaqueId: Optional[str] = None
+    shareError: Optional[str] = None
     updatedAt: str
 
 

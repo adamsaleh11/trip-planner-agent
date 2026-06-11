@@ -75,7 +75,7 @@ def test_category_agent_instruction_contains_trip_and_member_preferences():
     agent = build_category_agent("food_drink", _trip(), _group())
 
     assert agent.name == "food_drink_agent"
-    assert agent.model == "gemini-2.5-flash"
+    assert agent.model == "gemini-3.1-flash-lite"
     assert "Lisbon, Portugal" in agent.instruction
     assert "2026-07-01 to 2026-07-03" in agent.instruction
     assert "Baixa" in agent.instruction

@@ -1,6 +1,6 @@
 # Plan: Journal Collective Memory
 
-> Source PRD: T4.1 -- Journal + anonymous collective trip memory (RAG), with 2026-06-10 free-tier retrieval pivot.
+> Source PRD: T4.1 -- Journal + anonymous collective trip memory (RAG), with 2026-06-10 free-tier retrieval pivot and grill-session decisions.
 
 ## Architectural decisions
 
@@ -10,8 +10,10 @@ Durable decisions that apply across all phases:
 - **Schema**: Journal entries are trip-scoped and venue-centric. Each journal stop stores public-to-trip stop metadata plus private per-member contribution state. Shared collective-memory docs store only anonymized retrieval payloads plus embeddings.
 - **Key models**: `journalEntries`, `collectiveMemory`, and private owner-scoped `collectiveMemoryShares/{uid}/items/{opaqueId}` deletion map.
 - **Auth**: Completing a trip is admin-only. Journal reads and writes are trip-member-only. Per-member note content remains private to its author. Whim-to-journal requires the whim owner to still be a trip member.
-- **External services**: PII scrub and embedding are dependency-injected boundaries. The default retrieval backend is exact cosine scan over Firestore docs; hosted Vector Search remains the documented scale path behind the same retriever interface.
-- **Privacy**: Shared payloads never store uid, tripId, member names, emails, handles, phone numbers, or exact dates. Opaque IDs are deterministic HMACs using a server secret so edits overwrite and users can delete their own shared datapoints.
+- **External services**: Production sharing uses regex pre-scrub, Gemini Flash scrub, regex post-scrub, and `gemini-embedding-001` embeddings. Tests and local fallback use dependency-injected fakes.
+- **Retrieval**: The default backend is exact cosine scan over Firestore docs behind a `MemoryRetriever` interface. Hosted Vertex Vector Search is the documented scale path, not deployed for the free-tier MVP.
+- **Privacy**: Shared payloads never store uid, tripId, member names, emails, handles, phone numbers, or exact dates. Destination is normalized below full raw trip text. Opaque IDs are deterministic HMACs using a server secret so edits overwrite and users can delete their own shared datapoints.
+- **Failure behavior**: If scrub or embedding fails during opt-in share, the private journal contribution is still saved, but no public memory doc is created.
 
 ---
 
@@ -32,7 +34,7 @@ Complete-trip behavior that marks the trip completed and creates missing journal
 
 ---
 
-## Phase 2: Member Journal Save And Privacy
+## Phase 2: Member Journal Save And Private Reads
 
 **User stories**: Members rate/write notes per place; notes are private by default; non-members cannot read or write.
 
@@ -49,68 +51,105 @@ Member journal editing through the trip journal API. A member can update rating,
 
 ---
 
-## Phase 3: Opt-In Anonymous Share Pipeline
+## Phase 3: Production Anonymous Share Pipeline
 
 **User stories**: Member opts into sharing; note is scrubbed, embedded, stored with opaque HMAC ID and anonymized hydration payload.
 
 ### What to build
 
-When a member saves a journal contribution with `shareAnonymously=true`, the system scrubs identifying text, embeds the anonymized tip, and writes a deterministic collective-memory document plus a private deletion-map item. Edits overwrite the same shared item.
+When a member saves a journal contribution with `shareAnonymously=true`, the system requires a rating, regex-scrubs obvious PII before model exposure, asks Gemini Flash to remove identifying references while preserving the travel tip, regex-scrubs again, embeds the anonymized venue-context text, and writes a deterministic collective-memory document plus a private deletion-map item. If the scrub or embed boundary fails, the contribution is saved privately and the public share is skipped.
 
 ### Acceptance criteria
 
 - [ ] Shared payload includes destination, category, placeId, venueName, rating, scrubbedText, groupSizeBucket, monthVisited, embedding, and optional synthetic marker.
-- [ ] Shared payload excludes uid, tripId, member names, emails, handles, phones, and exact dates.
+- [ ] Shared payload excludes uid, tripId, member names, participant names, emails, handles, phones, and exact dates.
 - [ ] A note containing a member name plus email/handle/phone is retrievable only after scrubbing.
 - [ ] Editing a shared entry overwrites the same opaque ID with no duplicate memory docs.
+- [ ] A failed scrub or embedding call leaves the journal note private and creates no collective-memory doc.
+- [ ] Sharing requires a rating, while private journal saves may omit one.
 
 ---
 
-## Phase 4: Search And Deletion Loop
+## Phase 4: Exact Memory Retrieval And Deletion
 
 **User stories**: Another account can retrieve shared tips for the same destination/category; unshared notes are never retrievable; delete/unshare removes the shared memory.
 
 ### What to build
 
-Exact cosine retrieval over shared memory docs, filtered by normalized destination and category, plus user-visible share listing and deletion. Toggle-off uses the same deletion path.
+Exact cosine retrieval over shared memory docs, filtered by normalized destination and category, plus user-visible share listing and deletion. Toggle-off uses the same deletion path and only succeeds for shares owned by the caller's private deletion map.
 
 ### Acceptance criteria
 
 - [ ] `search_collective_memory(destination, category, query)` returns top matching anonymized tips for the same destination/category.
+- [ ] Destination matching avoids raw trip text and distinguishes common city/country variants when the input includes them.
 - [ ] A different account's generation path can retrieve another user's shared tip, while unshared notes are absent.
 - [ ] `DELETE /me/shares/{opaqueId}` removes both the public memory doc and private deletion-map item.
 - [ ] Retrieval before and after deletion proves the entry is gone.
 
 ---
 
-## Phase 5: Agent And Whim Memory Integration
+## Phase 5: Retriever Abstraction And Scale Path
 
-**User stories**: Category agents can use anonymous traveler tips; generated itinerary `whyItFits` can cite "travelers tip"; Right Now suggestions can include `travelersTip`.
+**User stories**: The MVP stays on a free exact retriever, while the production architecture has a clear swap path for larger corpora.
 
 ### What to build
 
-Replace the existing collective-memory stub with the real retriever while keeping retrieval as a tool. Update category-agent instructions so traveler tips are context, never authority. Enrich trip-context whim suggestions with a matching anonymous traveler tip when available.
+Keep the public `search_collective_memory(destination, category, query)` interface stable while routing retrieval through a small retriever abstraction. The Firestore exact-cosine retriever is the default. The handoff docs describe when to swap to Vertex Vector Search and which fields become restricts/filters.
+
+### Acceptance criteria
+
+- [ ] Retrieval behavior is exercised through the stable tool interface, not a hosted index.
+- [ ] The default retriever stores and reads embeddings from `collectiveMemory`.
+- [ ] A future Vertex retriever can be introduced without changing journal writes or agent tool callers.
+- [ ] Documentation explains the corpus-size or latency trigger for switching backends.
+
+---
+
+## Phase 6: Agent Citation Integration
+
+**User stories**: Category agents can use anonymous traveler tips; generated itinerary `whyItFits` can cite "travelers tip".
+
+### What to build
+
+Category agents may call memory once per category and receive up to five anonymized tips as context. Memory-inspired suggestions remain grounded through Places and can carry an explicit `travelersTip` field as well as a "travelers tip" citation inside explanatory text.
 
 ### Acceptance criteria
 
 - [ ] Category agents may call collective memory at most once per generation and receive top-5 anonymized tips.
+- [ ] Category results can expose optional `travelersTip` without breaking existing clients.
 - [ ] Memory-inspired recommendations remain marked `suggested=true` unless directly grounded in current-trip preferences.
 - [ ] A live itinerary stop can include a "travelers tip" citation in `whyItFits`.
-- [ ] Trip-context whim responses can include `travelersTip` from collective memory.
 
 ---
 
-## Phase 6: Whim To Journal And Synthetic Seed Data
+## Phase 7: Whim Memory And Journal Tie-In
 
-**User stories**: A trip-context whim can be saved into the journal by its owner; synthetic collective memory entries support demos without real user data.
+**User stories**: Right Now suggestions can include `travelersTip`; a trip-context whim can be saved into the journal by its owner.
 
 ### What to build
 
-Allow a member to save their own trip-context whim suggestion into the trip journal using the same journal entry and sharing pipeline as itinerary stops. Add a repeatable seed script that creates clearly synthetic collective-memory docs for demo destinations.
+Trip-context whim responses attach a matching anonymous traveler tip when available. A member can save their own trip-context whim suggestion into that trip's journal, where it behaves like any other journal entry and can later be rated, edited, or explicitly shared.
 
 ### Acceptance criteria
 
+- [ ] Trip-context whim responses can include `travelersTip` from collective memory.
 - [ ] Whim owner can save a trip-context suggestion into that trip's journal.
 - [ ] Non-owners and non-members cannot save a whim into the journal.
 - [ ] A saved whim can be shared anonymously and retrieved like any other journal entry.
-- [ ] Seed script creates about 15 clearly synthetic entries across 2-3 real destinations and never uses real user/trip data.
+
+---
+
+## Phase 8: Synthetic Seed And Demo Proof
+
+**User stories**: Synthetic collective memory entries support demos without real user data.
+
+### What to build
+
+Add a repeatable seed script that creates clearly synthetic collective-memory docs for demo destinations using the same embedding boundary as production. Seed data must never read from users, trips, journal entries, or private collections.
+
+### Acceptance criteria
+
+- [ ] Seed script creates about 15 clearly synthetic entries across 2-3 real destinations.
+- [ ] Seed entries are marked `synthetic: true`.
+- [ ] Seed entries use embeddings compatible with production query embeddings.
+- [ ] No real user, real trip, or Rio trip data is read or written.

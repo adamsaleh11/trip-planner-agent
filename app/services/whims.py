@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from fastapi import HTTPException
 
 from app.core.auth import CurrentUser
+from app.core.observability import start_span
 from app.data.repository import Repository
 from app.models.preferences import GroupPreferencesEntry
 from app.models.trip import Trip
@@ -47,47 +48,60 @@ def create_whim(
     memory_pipeline,
 ) -> WhimResponse:
     trace_id = uuid.uuid4().hex
-    trip: Trip | None = None
-    group_preferences: list[GroupPreferencesEntry] = []
-    if payload.tripId:
-        trip = trips_service.require_member(repo, payload.tripId, user.uid)
-        group_preferences = prefs_service.get_group_preferences(
-            repo, payload.tripId, user.uid
-        )
-    location_context = _resolve_location_context(payload, trip)
-    output = runner.suggest(
-        whim_text=payload.whimText,
-        location_context=location_context,
-        trip=trip,
-        group_preferences=group_preferences,
-        exclude_place_ids=payload.excludePlaceIds,
-        trace_id=trace_id,
-    )
-    suggestion = WhimSuggestion(**output["suggestion"])
-    if trip is not None:
-        _attach_travelers_tip(
-            repo,
-            suggestion,
-            trip.destination.text,
-            payload.whimText or suggestion.name,
-            memory_pipeline,
-        )
-    whim_id = uuid.uuid4().hex
-    repo.set(
-        WHIMS_COLLECTION,
-        whim_id,
+    span = start_span(
+        "whim.request",
+        trace_id,
         {
-            "id": whim_id,
-            "uid": user.uid,
-            "tripId": payload.tripId,
-            "whimText": payload.whimText,
-            "suggestion": suggestion.model_dump(),
-            "metrics": output.get("metrics", _empty_metrics()),
             "traceId": trace_id,
-            "createdAt": _now(),
+            "tripId": payload.tripId or "",
         },
     )
-    return WhimResponse(suggestion=suggestion, whimId=whim_id)
+    trip: Trip | None = None
+    try:
+        group_preferences: list[GroupPreferencesEntry] = []
+        if payload.tripId:
+            trip = trips_service.require_member(repo, payload.tripId, user.uid)
+            group_preferences = prefs_service.get_group_preferences(
+                repo, payload.tripId, user.uid
+            )
+        location_context = _resolve_location_context(payload, trip)
+        output = runner.suggest(
+            whim_text=payload.whimText,
+            location_context=location_context,
+            trip=trip,
+            group_preferences=group_preferences,
+            exclude_place_ids=payload.excludePlaceIds,
+            trace_id=trace_id,
+        )
+        suggestion = WhimSuggestion(**output["suggestion"])
+        if trip is not None:
+            _attach_travelers_tip(
+                repo,
+                suggestion,
+                trip.destination.text,
+                payload.whimText or suggestion.name,
+                memory_pipeline,
+            )
+        whim_id = uuid.uuid4().hex
+        repo.set(
+            WHIMS_COLLECTION,
+            whim_id,
+            {
+                "id": whim_id,
+                "uid": user.uid,
+                "tripId": payload.tripId,
+                "whimText": payload.whimText,
+                "suggestion": suggestion.model_dump(),
+                "metrics": output.get("metrics", _empty_metrics()),
+                "traceId": trace_id,
+                "createdAt": _now(),
+            },
+        )
+        span.end()
+        return WhimResponse(suggestion=suggestion, whimId=whim_id)
+    except Exception as exc:
+        span.end(exc)
+        raise
 
 
 def _attach_travelers_tip(

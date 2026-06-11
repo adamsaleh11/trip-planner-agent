@@ -28,6 +28,19 @@ class SharePipeline(Protocol):
         ...
 
 
+class MemoryRetriever(Protocol):
+    def search(
+        self,
+        *,
+        destination: str,
+        category: str,
+        query_embedding: list[float],
+        query: str,
+        limit: int,
+    ) -> dict:
+        ...
+
+
 class LocalSharePipeline:
     def scrub(self, text: str, blocked_terms: list[str]) -> str:
         scrubbed = text
@@ -41,8 +54,110 @@ class LocalSharePipeline:
         return [byte / 255 for byte in digest[:16]]
 
 
+class GeminiSharePipeline:
+    def __init__(
+        self,
+        *,
+        client,
+        scrub_model: str,
+        embedding_model: str,
+        embedding_dims: int,
+    ) -> None:
+        self._client = client
+        self._scrub_model = scrub_model
+        self._embedding_model = embedding_model
+        self._embedding_dims = embedding_dims
+
+    def scrub(self, text: str, blocked_terms: list[str]) -> str:
+        pre_scrubbed = scrub_text(text)
+        model_blocked_terms = [
+            term for term in blocked_terms if term and scrub_text(term) == term
+        ]
+        prompt = (
+            "Remove names and identifying references from this travel journal note. "
+            "Keep the useful travel tip. Do not add new details. "
+            "Return only the rewritten note.\n\n"
+            f"Blocked names or identifiers: {', '.join(model_blocked_terms) or 'none'}\n"
+            f"Note: {pre_scrubbed}"
+        )
+        response = self._client.models.generate_content(
+            model=self._scrub_model,
+            contents=prompt,
+            config={"temperature": 0.0},
+        )
+        rewritten = getattr(response, "text", "") or ""
+        return scrub_text(_remove_blocked_terms(rewritten, blocked_terms))
+
+    def embed(self, text: str) -> list[float]:
+        response = self._client.models.embed_content(
+            model=self._embedding_model,
+            contents=text,
+            config={"output_dimensionality": self._embedding_dims},
+        )
+        embeddings = getattr(response, "embeddings", None) or []
+        if embeddings:
+            return list(getattr(embeddings[0], "values", []))
+        embedding = getattr(response, "embedding", None)
+        return list(getattr(embedding, "values", [])) if embedding else []
+
+
 def get_share_pipeline() -> SharePipeline:
+    settings = get_settings()
+    if settings.google_api_key:
+        from google import genai
+
+        return GeminiSharePipeline(
+            client=genai.Client(api_key=settings.google_api_key),
+            scrub_model=settings.memory_scrub_model,
+            embedding_model=settings.memory_embedding_model,
+            embedding_dims=settings.memory_embedding_dims,
+        )
     return LocalSharePipeline()
+
+
+class FirestoreExactMemoryRetriever:
+    def __init__(self, repo: Repository) -> None:
+        self._repo = repo
+
+    def search(
+        self,
+        *,
+        destination: str,
+        category: str,
+        query_embedding: list[float],
+        query: str,
+        limit: int,
+    ) -> dict:
+        destination_token = _destination_token(destination)
+        scored = []
+        for opaque_id, data in self._repo.list(COLLECTIVE_MEMORY_COLLECTION):
+            if data.get("destination") != destination_token:
+                continue
+            if data.get("category") != category:
+                continue
+            score = cosine_similarity(query_embedding, data.get("embedding") or [])
+            scored.append((score, opaque_id, data))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return {
+            "destination": destination_token,
+            "category": category,
+            "query": query,
+            "limit": limit,
+            "status": "ok",
+            "results": [
+                {
+                    "opaqueId": opaque_id,
+                    "placeId": data.get("placeId"),
+                    "venueName": data.get("venueName"),
+                    "rating": data.get("rating"),
+                    "text": data.get("scrubbedText"),
+                    "groupSizeBucket": data.get("groupSizeBucket"),
+                    "monthVisited": data.get("monthVisited"),
+                    "score": score,
+                }
+                for score, opaque_id, data in scored[:limit]
+            ],
+        }
 
 
 def upsert_share(
@@ -58,7 +173,7 @@ def upsert_share(
     if not secret:
         raise HTTPException(status_code=500, detail="SERVER_HMAC_SECRET is required")
     opaque_id = opaque_share_id(secret, uid, trip.id, entry.placeId)
-    blocked_terms = _member_display_names(repo, trip.id)
+    blocked_terms = _trip_blocked_terms(repo, trip.id)
     scrubbed = scrub_text(pipeline.scrub(payload.note, blocked_terms))
     embedding_input = " ".join(
         part
@@ -118,38 +233,18 @@ def search_memory(
     category: str,
     query: str = "",
     limit: int = 5,
+    retriever: MemoryRetriever | None = None,
 ) -> dict:
     destination_token = _destination_token(destination)
     query_embedding = pipeline.embed(query or f"{destination_token} {category}")
-    scored = []
-    for opaque_id, data in repo.list(COLLECTIVE_MEMORY_COLLECTION):
-        if data.get("destination") != destination_token:
-            continue
-        if data.get("category") != category:
-            continue
-        score = cosine_similarity(query_embedding, data.get("embedding") or [])
-        scored.append((score, opaque_id, data))
-    scored.sort(key=lambda item: item[0], reverse=True)
-    return {
-        "destination": destination_token,
-        "category": category,
-        "query": query,
-        "limit": limit,
-        "status": "ok",
-        "results": [
-            {
-                "opaqueId": opaque_id,
-                "placeId": data.get("placeId"),
-                "venueName": data.get("venueName"),
-                "rating": data.get("rating"),
-                "text": data.get("scrubbedText"),
-                "groupSizeBucket": data.get("groupSizeBucket"),
-                "monthVisited": data.get("monthVisited"),
-                "score": score,
-            }
-            for score, opaque_id, data in scored[:limit]
-        ],
-    }
+    memory_retriever = retriever or FirestoreExactMemoryRetriever(repo)
+    return memory_retriever.search(
+        destination=destination,
+        category=category,
+        query_embedding=query_embedding,
+        query=query,
+        limit=limit,
+    )
 
 
 def opaque_share_id(secret: str, uid: str, trip_id: str, place_id: str) -> str:
@@ -165,25 +260,34 @@ def scrub_text(text: str) -> str:
     return text.strip()
 
 
+def _remove_blocked_terms(text: str, blocked_terms: list[str]) -> str:
+    scrubbed = text
+    for term in blocked_terms:
+        if term:
+            scrubbed = re.sub(re.escape(term), "", scrubbed, flags=re.IGNORECASE)
+    return scrubbed
+
+
 def _share_items_collection(uid: str) -> str:
     return f"{SHARES_COLLECTION}/{uid}/items"
 
 
-def _member_display_names(repo: Repository, trip_id: str) -> list[str]:
-    names = [
-        data.get("displayName")
-        for _, data in trips_service.list_members_raw(repo, trip_id)
-    ]
-    names.extend(
-        data.get("displayName")
-        for _, data in trips_service.list_participants_raw(repo, trip_id)
-    )
-    return [name for name in names if name]
+def _trip_blocked_terms(repo: Repository, trip_id: str) -> list[str]:
+    terms = []
+    for _, data in trips_service.list_members_raw(repo, trip_id):
+        terms.extend([data.get("displayName"), data.get("email")])
+    for _, data in trips_service.list_participants_raw(repo, trip_id):
+        terms.extend([data.get("displayName"), data.get("email")])
+    return [term for term in dict.fromkeys(terms) if term]
 
 
 def _destination_token(destination: str) -> str:
-    city = destination.split(",", 1)[0].strip().lower()
-    return re.sub(r"[^a-z0-9]+", "-", city).strip("-")
+    parts = [part.strip().lower() for part in destination.split(",") if part.strip()]
+    if len(parts) >= 2:
+        token_source = " ".join([parts[0], parts[-1]])
+    else:
+        token_source = parts[0] if parts else destination.strip().lower()
+    return re.sub(r"[^a-z0-9]+", "-", token_source).strip("-")
 
 
 def _group_size_bucket(count: int) -> str:

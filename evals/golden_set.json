@@ -1,0 +1,192 @@
+[
+  {
+    "id": "all-categories-filled",
+    "trip": {
+      "id": "eval-all-filled",
+      "name": "Lisbon All Filled",
+      "destination": {"text": "Lisbon, Portugal", "lat": 38.7223, "lng": -9.1393, "placeId": "places/lisbon"},
+      "startDate": "2026-07-10",
+      "endDate": "2026-07-12",
+      "lodgingArea": "Alfama",
+      "status": "planning",
+      "adminUid": "eval-admin",
+      "createdAt": "2026-06-10T00:00:00+00:00"
+    },
+    "groupPreferences": [
+      {
+        "participantId": "p1",
+        "displayName": "Ada",
+        "claimedByUid": "eval-admin",
+        "preferences": {
+          "food_drink": {"freeText": "seafood and coffee", "dietaryRestrictions": ["none"], "cuisineInterests": ["seafood"], "drinkInterests": ["coffee"]},
+          "outdoors_scenic": {"freeText": "viewpoints", "activityLevel": "moderate", "interests": ["viewpoints"]},
+          "nightlife": {"freeText": "live music", "vibe": ["live_music"], "frequency": "once_or_twice"},
+          "culture_local": {"freeText": "markets", "interests": ["markets"]},
+          "logistics": {"freeText": "walkable", "pace": "balanced", "wakeTime": "mid", "transport": ["walk", "transit"]}
+        }
+      }
+    ],
+    "emptyCategories": [],
+    "constraints": []
+  },
+  {
+    "id": "all-empty",
+    "trip": {
+      "id": "eval-all-empty",
+      "name": "Porto Inference",
+      "destination": {"text": "Porto, Portugal", "lat": 41.1579, "lng": -8.6291, "placeId": "places/porto"},
+      "startDate": "2026-08-01",
+      "endDate": "2026-08-03",
+      "lodgingArea": "Ribeira",
+      "status": "planning",
+      "adminUid": "eval-admin",
+      "createdAt": "2026-06-10T00:00:00+00:00"
+    },
+    "groupPreferences": [{"participantId": "p1", "displayName": "Ada", "claimedByUid": "eval-admin", "preferences": {}}],
+    "emptyCategories": ["food_drink", "outdoors_scenic", "nightlife", "culture_local", "logistics"],
+    "constraints": []
+  },
+  {
+    "id": "vegetarian-hard-constraint",
+    "trip": {
+      "id": "eval-vegetarian",
+      "name": "Montreal Vegetarian",
+      "destination": {"text": "Montreal, Canada", "lat": 45.5017, "lng": -73.5673, "placeId": "places/montreal"},
+      "startDate": "2026-09-05",
+      "endDate": "2026-09-07",
+      "lodgingArea": "Plateau",
+      "status": "planning",
+      "adminUid": "eval-admin",
+      "createdAt": "2026-06-10T00:00:00+00:00"
+    },
+    "groupPreferences": [{"participantId": "p1", "displayName": "Bea", "claimedByUid": "eval-admin", "preferences": {"food_drink": {"freeText": "vegetarian meals", "dietaryRestrictions": ["vegetarian"], "cuisineInterests": ["vegetarian"]}}}],
+    "emptyCategories": ["outdoors_scenic", "nightlife", "culture_local", "logistics"],
+    "constraints": [{"kind": "forbidden_name_terms", "terms": ["steakhouse", "bbq", "barbecue"]}]
+  },
+  {
+    "id": "conflicting-nightlife",
+    "trip": {
+      "id": "eval-conflict",
+      "name": "Miami Mixed Energy",
+      "destination": {"text": "Miami, Florida", "lat": 25.7617, "lng": -80.1918, "placeId": "places/miami"},
+      "startDate": "2026-10-02",
+      "endDate": "2026-10-04",
+      "lodgingArea": "South Beach",
+      "status": "planning",
+      "adminUid": "eval-admin",
+      "createdAt": "2026-06-10T00:00:00+00:00"
+    },
+    "groupPreferences": [
+      {"participantId": "p1", "displayName": "Club", "claimedByUid": "u1", "preferences": {"nightlife": {"freeText": "clubs", "vibe": ["clubs"], "frequency": "most_nights"}}},
+      {"participantId": "p2", "displayName": "Chill", "claimedByUid": "u2", "preferences": {"nightlife": {"freeText": "chill drinks only", "vibe": ["chill_drinks"], "frequency": "once_or_twice"}}}
+    ],
+    "emptyCategories": ["food_drink", "outdoors_scenic", "culture_local", "logistics"],
+    "constraints": []
+  },
+  {
+    "id": "single-day-trip",
+    "trip": {
+      "id": "eval-single-day",
+      "name": "NYC One Day",
+      "destination": {"text": "New York, NY", "lat": 40.7128, "lng": -74.006, "placeId": "places/nyc"},
+      "startDate": "2026-11-12",
+      "endDate": "2026-11-12",
+      "lodgingArea": "SoHo",
+      "status": "planning",
+      "adminUid": "eval-admin",
+      "createdAt": "2026-06-10T00:00:00+00:00"
+    },
+    "groupPreferences": [{"participantId": "p1", "displayName": "Ada", "claimedByUid": "eval-admin", "preferences": {"logistics": {"pace": "packed", "transport": ["transit"]}}}],
+    "emptyCategories": ["food_drink", "outdoors_scenic", "nightlife", "culture_local"],
+    "constraints": []
+  },
+  {
+    "id": "fourteen-day-trip",
+    "trip": {
+      "id": "eval-fourteen-day",
+      "name": "Tokyo Two Weeks",
+      "destination": {"text": "Tokyo, Japan", "lat": 35.6762, "lng": 139.6503, "placeId": "places/tokyo"},
+      "startDate": "2026-12-01",
+      "endDate": "2026-12-14",
+      "lodgingArea": "Shinjuku",
+      "status": "planning",
+      "adminUid": "eval-admin",
+      "createdAt": "2026-06-10T00:00:00+00:00"
+    },
+    "groupPreferences": [{"participantId": "p1", "displayName": "Ada", "claimedByUid": "eval-admin", "preferences": {"culture_local": {"freeText": "neighborhoods and markets", "interests": ["neighborhoods", "markets"]}, "logistics": {"pace": "balanced", "transport": ["transit", "walk"]}}}],
+    "emptyCategories": ["food_drink", "outdoors_scenic", "nightlife"],
+    "constraints": []
+  },
+  {
+    "id": "admin-filled-unclaimed-participant",
+    "trip": {
+      "id": "eval-unclaimed",
+      "name": "Barcelona With Unclaimed",
+      "destination": {"text": "Barcelona, Spain", "lat": 41.3874, "lng": 2.1686, "placeId": "places/barcelona"},
+      "startDate": "2026-07-20",
+      "endDate": "2026-07-23",
+      "lodgingArea": "Gothic Quarter",
+      "status": "planning",
+      "adminUid": "eval-admin",
+      "createdAt": "2026-06-10T00:00:00+00:00"
+    },
+    "groupPreferences": [
+      {"participantId": "p1", "displayName": "Admin", "claimedByUid": "eval-admin", "preferences": {"food_drink": {"freeText": "tapas", "dietaryRestrictions": ["none"], "cuisineInterests": ["tapas"]}}},
+      {"participantId": "p2", "displayName": "Unclaimed Friend", "claimedByUid": null, "preferences": {"outdoors_scenic": {"freeText": "beaches", "activityLevel": "chill", "interests": ["beaches"]}}}
+    ],
+    "emptyCategories": ["nightlife", "culture_local", "logistics"],
+    "constraints": []
+  },
+  {
+    "id": "mobility-hard-constraint",
+    "trip": {
+      "id": "eval-mobility",
+      "name": "San Francisco Mobility",
+      "destination": {"text": "San Francisco, CA", "lat": 37.7749, "lng": -122.4194, "placeId": "places/sf"},
+      "startDate": "2026-08-15",
+      "endDate": "2026-08-17",
+      "lodgingArea": "Union Square",
+      "status": "planning",
+      "adminUid": "eval-admin",
+      "createdAt": "2026-06-10T00:00:00+00:00"
+    },
+    "groupPreferences": [{"participantId": "p1", "displayName": "Ada", "claimedByUid": "eval-admin", "preferences": {"logistics": {"freeText": "avoid steep hills", "pace": "relaxed", "mobilityNotes": "avoid steep hills"}}}],
+    "emptyCategories": ["food_drink", "outdoors_scenic", "nightlife", "culture_local"],
+    "constraints": [{"kind": "forbidden_name_terms", "terms": ["strenuous", "steep hike"]}]
+  },
+  {
+    "id": "manual-plan-present",
+    "trip": {
+      "id": "eval-manual",
+      "name": "Paris Manual Dinner",
+      "destination": {"text": "Paris, France", "lat": 48.8566, "lng": 2.3522, "placeId": "places/paris"},
+      "startDate": "2026-09-20",
+      "endDate": "2026-09-22",
+      "lodgingArea": "Le Marais",
+      "status": "planning",
+      "adminUid": "eval-admin",
+      "createdAt": "2026-06-10T00:00:00+00:00"
+    },
+    "groupPreferences": [{"participantId": "p1", "displayName": "Ada", "claimedByUid": "eval-admin", "preferences": {"culture_local": {"interests": ["museums"]}}}],
+    "manualPlans": [{"id": "manual-1", "activity": "Dinner reservation", "category": "food_drink", "date": "2026-09-20", "timeOfDay": "evening", "placeId": "places/manual-dinner", "address": "Paris"}],
+    "emptyCategories": ["food_drink", "outdoors_scenic", "nightlife", "logistics"],
+    "constraints": []
+  },
+  {
+    "id": "halal-hard-constraint",
+    "trip": {
+      "id": "eval-halal",
+      "name": "London Halal",
+      "destination": {"text": "London, UK", "lat": 51.5072, "lng": -0.1276, "placeId": "places/london"},
+      "startDate": "2026-10-10",
+      "endDate": "2026-10-13",
+      "lodgingArea": "Shoreditch",
+      "status": "planning",
+      "adminUid": "eval-admin",
+      "createdAt": "2026-06-10T00:00:00+00:00"
+    },
+    "groupPreferences": [{"participantId": "p1", "displayName": "Ada", "claimedByUid": "eval-admin", "preferences": {"food_drink": {"freeText": "halal food", "dietaryRestrictions": ["halal"], "cuisineInterests": ["middle eastern"]}}}],
+    "emptyCategories": ["outdoors_scenic", "nightlife", "culture_local", "logistics"],
+    "constraints": [{"kind": "forbidden_name_terms", "terms": ["pork", "wine bar"]}]
+  }
+]

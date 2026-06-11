@@ -138,6 +138,7 @@ def test_shared_journal_note_writes_anonymized_collective_memory_payload(
     class FakePipeline(SharePipeline):
         def scrub(self, text, blocked_terms):
             assert "Ada" in blocked_terms
+            assert "user-a@x.com" in blocked_terms
             return text.replace("Ada", "").replace("adam@example.com", "")
 
         def embed(self, text):
@@ -162,7 +163,7 @@ def test_shared_journal_note_writes_anonymized_collective_memory_payload(
     assert saved.status_code == 200
     opaque_id = saved.json()["myEntry"]["sharedOpaqueId"]
     memory = repo.get("collectiveMemory", opaque_id)
-    assert memory["destination"] == "lisbon"
+    assert memory["destination"] == "lisbon-portugal"
     assert memory["category"] == "food_drink"
     assert memory["placeId"] == "places/cafe-lisboa"
     assert memory["venueName"] == "Cafe Lisboa"
@@ -180,6 +181,70 @@ def test_shared_journal_note_writes_anonymized_collective_memory_payload(
     share_map = repo.get(f"collectiveMemoryShares/user-a/items", opaque_id)
     assert share_map["opaqueId"] == opaque_id
     assert share_map["placeId"] == "places/cafe-lisboa"
+
+
+def test_share_pipeline_failure_saves_journal_note_privately(client, verifier, repo):
+    from app.services.collective_memory import SharePipeline, get_share_pipeline
+
+    class FailingPipeline(SharePipeline):
+        def scrub(self, text, blocked_terms):
+            raise RuntimeError("scrub unavailable")
+
+        def embed(self, text):
+            raise AssertionError("embed should not run after scrub failure")
+
+    client.app.dependency_overrides[get_share_pipeline] = lambda: FailingPipeline()
+    owner = make_user(verifier, token="tok-a", uid="user-a", name="Ada")
+    trip_id = create_trip(client, owner).json()["id"]
+    _seed_generation(repo, trip_id)
+    client.post(f"/trips/{trip_id}/complete", headers=_auth(owner))
+
+    saved = client.put(
+        f"/trips/{trip_id}/journal/places%2Fcafe-lisboa",
+        json={
+            "rating": 5,
+            "note": "Worth remembering, but keep it private if sharing fails.",
+            "shareAnonymously": True,
+        },
+        headers=_auth(owner),
+    )
+
+    assert saved.status_code == 200
+    assert saved.json()["myEntry"]["note"] == (
+        "Worth remembering, but keep it private if sharing fails."
+    )
+    assert saved.json()["myEntry"]["shareAnonymously"] is False
+    assert saved.json()["myEntry"]["sharedOpaqueId"] is None
+    assert saved.json()["myEntry"]["shareError"] == "share_failed"
+    assert repo.list("collectiveMemory") == []
+    assert repo.list("collectiveMemoryShares/user-a/items") == []
+
+
+def test_shared_journal_note_requires_rating_but_private_note_does_not(
+    client, verifier, repo
+):
+    owner = make_user(verifier, token="tok-a", uid="user-a", name="Ada")
+    trip_id = create_trip(client, owner).json()["id"]
+    _seed_generation(repo, trip_id)
+    client.post(f"/trips/{trip_id}/complete", headers=_auth(owner))
+
+    private_saved = client.put(
+        f"/trips/{trip_id}/journal/places%2Fcafe-lisboa",
+        json={"note": "Private note without a rating."},
+        headers=_auth(owner),
+    )
+    shared_without_rating = client.put(
+        f"/trips/{trip_id}/journal/places%2Fcafe-lisboa",
+        json={"note": "Share this without rating.", "shareAnonymously": True},
+        headers=_auth(owner),
+    )
+
+    assert private_saved.status_code == 200
+    assert private_saved.json()["myEntry"]["rating"] is None
+    assert shared_without_rating.status_code == 422
+    assert shared_without_rating.json()["detail"] == (
+        "Rating is required to share anonymously"
+    )
 
 
 def test_collective_memory_search_and_delete_removes_shared_tip(
@@ -320,7 +385,7 @@ def test_trip_context_whim_response_includes_matching_travelers_tip(
         "collectiveMemory",
         "tip-1",
         {
-            "destination": "lisbon",
+            "destination": "lisbon-portugal",
             "category": "food_drink",
             "placeId": "places/gelato",
             "venueName": "Gelato Lisboa",
@@ -342,3 +407,51 @@ def test_trip_context_whim_response_includes_matching_travelers_tip(
     assert response.json()["suggestion"]["travelersTip"] == (
         "Travelers say the pistachio is the move."
     )
+
+
+def test_collective_memory_destination_filter_distinguishes_city_country(
+    repo,
+):
+    from app.services.collective_memory import LocalSharePipeline, search_memory
+
+    pipeline = LocalSharePipeline()
+    repo.set(
+        "collectiveMemory",
+        "portugal-tip",
+        {
+            "destination": "lisbon-portugal",
+            "category": "food_drink",
+            "placeId": "places/lisbon-pt",
+            "venueName": "Lisbon Portugal Cafe",
+            "rating": 5,
+            "scrubbedText": "Portugal tip.",
+            "groupSizeBucket": "small",
+            "monthVisited": 7,
+            "embedding": pipeline.embed("coffee"),
+        },
+    )
+    repo.set(
+        "collectiveMemory",
+        "texas-tip",
+        {
+            "destination": "lisbon-texas",
+            "category": "food_drink",
+            "placeId": "places/lisbon-tx",
+            "venueName": "Lisbon Texas Diner",
+            "rating": 4,
+            "scrubbedText": "Texas tip.",
+            "groupSizeBucket": "small",
+            "monthVisited": 7,
+            "embedding": pipeline.embed("coffee"),
+        },
+    )
+
+    results = search_memory(
+        repo,
+        pipeline=pipeline,
+        destination="Lisbon, Portugal",
+        category="food_drink",
+        query="coffee",
+    )
+
+    assert [result["opaqueId"] for result in results["results"]] == ["portugal-tip"]

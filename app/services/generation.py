@@ -10,6 +10,7 @@ from typing import Any, Protocol
 from fastapi import BackgroundTasks, HTTPException
 
 from app.core.auth import CurrentUser
+from app.core.observability import start_span
 from app.data.repository import Repository
 from app.models.preferences import CATEGORIES, GroupPreferencesEntry
 from app.models.trip import Trip
@@ -19,6 +20,15 @@ from app.services import trips as trips_service
 
 
 CATEGORY_RUNNING_STALE_SECONDS = 5 * 60
+
+COORDINATOR_PROVIDERS = {"groq", "gemini"}
+
+MODEL_PRICING_USD_PER_MILLION = {
+    "gemini-3.1-flash-lite": {"input": 0.25, "output": 1.50},
+    "gemini-2.5-flash-lite": {"input": 0.10, "output": 0.40},
+    "gemini-2.5-flash": {"input": 0.30, "output": 2.50},
+    "gemini-3.5-flash": {"input": 1.50, "output": 9.00},
+}
 
 
 class GenerationRunner(Protocol):
@@ -40,6 +50,7 @@ class GenerationRunner(Protocol):
         category_results: dict[str, dict[str, Any]],
         manual_plans: list[dict[str, Any]],
         trace_id: str,
+        provider: str | None = None,
     ) -> dict[str, Any]:
         ...
 
@@ -86,7 +97,7 @@ def request_category_generation(
 ) -> dict[str, str]:
     if category not in CATEGORIES:
         raise HTTPException(status_code=404, detail="Unknown preference category")
-    trip = trips_service.require_member(repo, trip_id, user.uid)
+    trip = trips_service.require_admin(repo, trip_id, user.uid)
     existing = repo.get(_category_results_collection(trip_id), category)
     if _is_running(existing):
         raise HTTPException(status_code=409, detail="Category generation already running")
@@ -127,13 +138,25 @@ def request_trip_generation(
     user: CurrentUser,
     trip_id: str,
     runner: GenerationRunner,
+    provider: str | None = None,
 ) -> dict[str, str]:
     trip = trips_service.require_admin(repo, trip_id, user.uid)
+    if provider is not None and provider not in COORDINATOR_PROVIDERS:
+        raise HTTPException(status_code=422, detail="Unknown model provider")
     running_generation = _running_generation_id(repo, trip_id)
     if running_generation:
         raise HTTPException(
             status_code=409,
             detail={"generationId": running_generation},
+        )
+    cap = _settings().trip_generation_daily_cap
+    if cap > 0 and _generations_started_today(repo, trip_id) >= cap:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                f"This trip has reached its {cap} itinerary generations for "
+                "today. Try again tomorrow."
+            ),
         )
     generation_id = uuid.uuid4().hex
     trace_id = uuid.uuid4().hex
@@ -147,6 +170,7 @@ def request_trip_generation(
             "requestedBy": user.uid,
             "startedAt": _now(),
             "traceId": trace_id,
+            "modelProvider": provider,
         },
     )
     background_tasks.add_task(
@@ -157,8 +181,40 @@ def request_trip_generation(
         generation_id,
         runner,
         trace_id,
+        provider,
     )
     return {"generationId": generation_id}
+
+
+def get_generation_quota(
+    repo: Repository,
+    user: CurrentUser,
+    trip_id: str,
+) -> dict[str, Any]:
+    trips_service.require_member(repo, trip_id, user.uid)
+    cap = _settings().trip_generation_daily_cap
+    used = _generations_started_today(repo, trip_id)
+    return {
+        "cap": cap,
+        "usedToday": used,
+        # None means uncapped (cap disabled with 0).
+        "remaining": max(cap - used, 0) if cap > 0 else None,
+    }
+
+
+def _generations_started_today(repo: Repository, trip_id: str) -> int:
+    today = datetime.now(timezone.utc).date()
+    count = 0
+    for _, data in repo.list(_generations_collection(trip_id)):
+        started_at = data.get("startedAt")
+        if not started_at:
+            continue
+        try:
+            if datetime.fromisoformat(started_at).date() == today:
+                count += 1
+        except ValueError:
+            continue
+    return count
 
 
 def _running_generation_id(repo: Repository, trip_id: str) -> str | None:
@@ -190,6 +246,11 @@ def _run_category_job(
     trace_id: str,
 ) -> None:
     collection = _category_results_collection(trip.id)
+    span = start_span(
+        "category.request",
+        trace_id,
+        {"traceId": trace_id, "tripId": trip.id, "category": category},
+    )
     try:
         group_preferences = prefs_service.get_group_preferences(repo, trip.id, uid)
         version = _preferences_version(repo, trip.id, category)
@@ -209,6 +270,7 @@ def _run_category_job(
             version,
         )
     except Exception as exc:
+        span.end(exc)
         repo.update(
             collection,
             category,
@@ -230,6 +292,8 @@ def _run_category_job(
                 "errorDetail": str(exc),
             },
         )
+    else:
+        span.end()
 
 
 def _run_trip_generation_job(
@@ -239,8 +303,14 @@ def _run_trip_generation_job(
     generation_id: str,
     runner: GenerationRunner,
     trace_id: str,
+    provider: str | None = None,
 ) -> None:
     generation_collection = _generations_collection(trip.id)
+    span = start_span(
+        "generation.request",
+        trace_id,
+        {"traceId": trace_id, "tripId": trip.id},
+    )
     try:
         group_preferences = prefs_service.get_group_preferences(repo, trip.id, uid)
         repo.update(
@@ -255,6 +325,17 @@ def _run_trip_generation_job(
             if _is_fresh_category_result(repo, trip.id, category, result):
                 category_results[category] = result or {}
                 agent_statuses[category] = "skipped_fresh"
+                skip_span = start_span(
+                    "generation.category.skip_fresh",
+                    trace_id,
+                    {
+                        "traceId": trace_id,
+                        "tripId": trip.id,
+                        "category": category,
+                        "cache.status": "fresh",
+                    },
+                )
+                skip_span.end()
             else:
                 agent_statuses[category] = "running"
                 repo.update(
@@ -265,6 +346,11 @@ def _run_trip_generation_job(
                 version = _preferences_version(repo, trip.id, category)
                 fallback = False
                 fallback_reason = None
+                category_span = start_span(
+                    "generation.category",
+                    trace_id,
+                    {"traceId": trace_id, "tripId": trip.id, "category": category},
+                )
                 try:
                     output = runner.run_category(
                         category=category,
@@ -284,6 +370,8 @@ def _run_trip_generation_job(
                         reason=fallback_reason,
                     )
                     next_status = "fallback"
+                finally:
+                    category_span.end()
                 category_results[category] = _write_category_complete(
                     repo,
                     trip.id,
@@ -317,6 +405,7 @@ def _run_trip_generation_job(
             category_results=category_results,
             manual_plans=manual_plans,
             trace_id=trace_id,
+            provider=provider,
         )
         itinerary = output["itinerary"]
         _validate_itinerary(
@@ -341,7 +430,9 @@ def _run_trip_generation_job(
             trip.id,
             {"status": "generated", "latestGenerationId": generation_id},
         )
+        span.end()
     except Exception as exc:
+        span.end(exc)
         repo.update(
             generation_collection,
             generation_id,
@@ -419,7 +510,7 @@ def _write_category_complete(
 
 
 def _candidate_to_contract(candidate: dict[str, Any]) -> dict[str, Any]:
-    return {
+    data = {
         "placeId": candidate["place_id"],
         "name": candidate["name"],
         "address": candidate["address"],
@@ -430,6 +521,10 @@ def _candidate_to_contract(candidate: dict[str, Any]) -> dict[str, Any]:
         "priceLevel": candidate.get("estimated_price_level", "Not available"),
         "suggested": candidate["suggested"],
     }
+    travelers_tip = candidate.get("travelers_tip")
+    if travelers_tip:
+        data["travelersTip"] = travelers_tip
+    return data
 
 
 def _empty_metrics() -> dict[str, Any]:
@@ -550,6 +645,7 @@ class AdkGenerationRunner:
         category_results: dict[str, dict[str, Any]],
         manual_plans: list[dict[str, Any]],
         trace_id: str,
+        provider: str | None = None,
     ) -> dict[str, Any]:
         from travel_agent.graph import build_coordinator_agent
         from travel_agent.schemas import Itinerary
@@ -574,7 +670,7 @@ class AdkGenerationRunner:
             message=message,
             user_id=trace_id,
             session_id=f"{trace_id}-coordinator",
-            model_sequence=_settings().agent_coordinator_model_sequence,
+            model_sequence=_settings().coordinator_sequence_for_provider(provider),
         )
         return {
             "itinerary": output.model_dump(),
@@ -664,7 +760,11 @@ def _run_schema_agent(agent, schema, message: str, user_id: str, session_id: str
                 )
             )
             output = _extract_schema_output(events, schema)
-            return output, _metrics_from_events(events, start), _tool_results_from_events(events)
+            return (
+                output,
+                _metrics_from_events(events, start, _model_name(agent.model)),
+                _tool_results_from_events(events),
+            )
         except Exception as exc:
             last_error = exc
             if attempt < 2 and _is_transient_llm_error(exc):
@@ -721,7 +821,7 @@ def _extract_schema_output(events: list[Any], schema):
     raise RuntimeError("Agent did not return schema output")
 
 
-def _metrics_from_events(events: list[Any], start: float) -> dict[str, Any]:
+def _metrics_from_events(events: list[Any], start: float, model: str) -> dict[str, Any]:
     prompt_tokens = 0
     output_tokens = 0
     total_tokens = 0
@@ -738,7 +838,7 @@ def _metrics_from_events(events: list[Any], start: float) -> dict[str, Any]:
         "promptTokens": prompt_tokens,
         "outputTokens": output_tokens,
         "latencyMs": latency_ms,
-        "estCostUsd": _estimate_cost(prompt_tokens, output_tokens),
+        "estCostUsd": estimate_token_cost_usd(model, prompt_tokens, output_tokens),
         "llmCalls": 1,
         "toolCalls": len(_tool_results_from_events(events)),
         "tokensPerSecond": round(total_tokens / max(latency_ms / 1000, 0.001), 2),
@@ -763,7 +863,14 @@ def _tool_results_from_events(events: list[Any]) -> list[dict[str, Any]]:
 
 def _is_transient_llm_error(exc: Exception) -> bool:
     text = str(exc).lower()
-    return "503" in text or "high demand" in text or "unavailable" in text
+    return (
+        "503" in text
+        or "high demand" in text
+        or "unavailable" in text
+        # Groq models occasionally emit malformed or hallucinated tool calls;
+        # a fresh attempt usually succeeds.
+        or "tool_use_failed" in text
+    )
 
 
 def _should_try_next_model(exc: Exception) -> bool:
@@ -779,6 +886,7 @@ def _should_try_next_model(exc: Exception) -> bool:
         or "tokens per minute" in text
         or "tokens per day" in text
         or "json mode cannot be combined with tool/function calling" in text
+        or "tool_use_failed" in text
         or "reasoning_content" in text
         or ("model" in text and "404" in text)
         or ("model" in text and "not found" in text)
@@ -792,6 +900,11 @@ def _user_generation_error(exc: Exception, fallback: str) -> str:
         return (
             "Configured LLM model is incompatible with the agent tool loop. "
             "Switch to a model that supports tool calling in this runner."
+        )
+    if "tool_use_failed" in text:
+        return (
+            "The model produced an invalid tool call. This is usually transient — "
+            "try generating again."
         )
     if _should_try_next_model(exc):
         return (
@@ -807,12 +920,22 @@ def _billing_tier() -> str:
     return "vertex" if os.environ.get("GOOGLE_GENAI_USE_VERTEXAI") == "true" else "free"
 
 
-def _estimate_cost(prompt_tokens: int, output_tokens: int) -> float:
-    input_per_million = 0.30
-    output_per_million = 2.50
+def _model_name(model: Any) -> str:
+    return str(getattr(model, "model", None) or model)
+
+
+def estimate_token_cost_usd(
+    model: str,
+    prompt_tokens: int,
+    output_tokens: int,
+) -> float:
+    pricing = MODEL_PRICING_USD_PER_MILLION.get(
+        model,
+        MODEL_PRICING_USD_PER_MILLION["gemini-2.5-flash"],
+    )
     return round(
-        (prompt_tokens / 1_000_000 * input_per_million)
-        + (output_tokens / 1_000_000 * output_per_million),
+        (prompt_tokens / 1_000_000 * pricing["input"])
+        + (output_tokens / 1_000_000 * pricing["output"]),
         8,
         )
 

@@ -22,6 +22,7 @@ class CategoryCandidate(BaseModel):
     time_of_day_fit: Literal["morning", "afternoon", "evening", "flexible"]
     estimated_price_level: str = "Not available"
     suggested: bool
+    travelers_tip: Optional[str] = None
 
 
 class CategoryCandidateList(BaseModel):

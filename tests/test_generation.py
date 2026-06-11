@@ -59,6 +59,7 @@ class ScriptedGenerationRunner:
                     "time_of_day_fit": "morning",
                     "estimated_price_level": "$$",
                     "suggested": False,
+                    "travelers_tip": "Travelers tip: order the pastry before noon.",
                 }
             ],
             "metrics": {
@@ -108,11 +109,19 @@ class ScriptedGenerationRunner:
         }
 
     def run_coordinator(
-        self, *, trip, group_preferences, category_results, trace_id, manual_plans=None
+        self,
+        *,
+        trip,
+        group_preferences,
+        category_results,
+        trace_id,
+        manual_plans=None,
+        provider=None,
     ):
         call = {
             "participantIds": [entry.participantId for entry in group_preferences],
             "categories": sorted(category_results),
+            "provider": provider,
         }
         if manual_plans is not None:
             call["manualPlanActivities"] = [plan["activity"] for plan in manual_plans]
@@ -231,7 +240,17 @@ def test_adk_runner_tries_next_model_on_quota_error(monkeypatch):
     ]
 
 
-def test_member_can_generate_one_category_result(client, verifier, repo):
+def test_estimated_cost_uses_current_flash_lite_pricing():
+    from app.services import generation
+
+    assert generation.estimate_token_cost_usd(
+        "gemini-3.1-flash-lite",
+        prompt_tokens=1_000_000,
+        output_tokens=1_000_000,
+    ) == 1.75
+
+
+def test_admin_can_generate_one_category_result(client, verifier, repo):
     from app.services.generation import get_generation_runner
 
     runner = ScriptedGenerationRunner()
@@ -260,6 +279,9 @@ def test_member_can_generate_one_category_result(client, verifier, repo):
     assert result["status"] == "complete"
     assert result["candidates"][0]["placeId"] == "places/cafe-lisboa"
     assert result["candidates"][0]["suggested"] is False
+    assert result["candidates"][0]["travelersTip"] == (
+        "Travelers tip: order the pastry before noon."
+    )
     assert result["sourceParticipantIds"] == [participant_id]
     assert result["preferencesVersion"]
     assert result["stale"] is False
@@ -292,6 +314,73 @@ def test_running_category_generation_returns_conflict(client, verifier, repo):
 
     assert response.status_code == 409
     assert runner.category_calls == []
+
+
+def test_trip_generation_daily_cap_returns_429(client, verifier, repo):
+    from app.core.config import get_settings
+    from app.services.generation import get_generation_runner
+
+    runner = ScriptedGenerationRunner()
+    client.app.dependency_overrides[get_generation_runner] = lambda: runner
+    owner = _user(verifier)
+    trip_id = _create_trip(client, owner)
+    cap = get_settings().trip_generation_daily_cap
+    now = datetime.now(timezone.utc).isoformat()
+    for index in range(cap):
+        repo.set(
+            f"trips/{trip_id}/generations",
+            f"gen-{index}",
+            {"status": "complete", "startedAt": now},
+        )
+
+    response = client.post(f"/trips/{trip_id}/generate", headers=_auth(owner))
+
+    assert response.status_code == 429
+    assert "generations for today" in response.json()["detail"]
+    assert runner.coordinator_calls == []
+
+
+def test_generation_quota_reports_remaining_runs(client, verifier, repo):
+    from app.core.config import get_settings
+
+    owner = _user(verifier)
+    trip_id = _create_trip(client, owner)
+    cap = get_settings().trip_generation_daily_cap
+
+    response = client.get(f"/trips/{trip_id}/generation-quota", headers=_auth(owner))
+    assert response.status_code == 200
+    assert response.json() == {"cap": cap, "usedToday": 0, "remaining": cap}
+
+    now = datetime.now(timezone.utc).isoformat()
+    repo.set(
+        f"trips/{trip_id}/generations",
+        "gen-0",
+        {"status": "error", "startedAt": now},
+    )
+
+    response = client.get(f"/trips/{trip_id}/generation-quota", headers=_auth(owner))
+    assert response.json() == {"cap": cap, "usedToday": 1, "remaining": cap - 1}
+
+
+def test_trip_generation_cap_ignores_previous_days(client, verifier, repo):
+    from app.core.config import get_settings
+    from app.services.generation import get_generation_runner
+
+    runner = ScriptedGenerationRunner()
+    client.app.dependency_overrides[get_generation_runner] = lambda: runner
+    owner = _user(verifier)
+    trip_id = _create_trip(client, owner)
+    cap = get_settings().trip_generation_daily_cap
+    for index in range(cap):
+        repo.set(
+            f"trips/{trip_id}/generations",
+            f"gen-{index}",
+            {"status": "complete", "startedAt": "2026-01-01T10:00:00+00:00"},
+        )
+
+    response = client.post(f"/trips/{trip_id}/generate", headers=_auth(owner))
+
+    assert response.status_code == 202
 
 
 def test_coordinator_reuses_fresh_category_results(client, verifier, repo):
@@ -354,8 +443,33 @@ def test_coordinator_reuses_fresh_category_results(client, verifier, repo):
             "participantIds": [participant_id],
             "categories": sorted(CATEGORY_ORDER),
             "manualPlanActivities": [],
+            "provider": None,
         }
     ]
+
+
+def test_only_trip_admin_can_generate_category(client, verifier, repo):
+    from app.services.generation import get_generation_runner
+    from app.services.trips import add_member
+
+    runner = ScriptedGenerationRunner()
+    client.app.dependency_overrides[get_generation_runner] = lambda: runner
+    owner = _user(verifier)
+    member = _user(verifier, token="tok-b", uid="user-b", name="Bea")
+    trip_id = _create_trip(client, owner)
+    add_member(
+        repo,
+        trip_id,
+        CurrentUser(uid="user-b", email="user-b@x.com", display_name="Bea"),
+    )
+
+    response = client.post(
+        f"/trips/{trip_id}/categories/food_drink/generate", headers=_auth(member)
+    )
+
+    assert response.status_code == 403
+    assert response.json()["detail"] == "Admin role required"
+    assert runner.category_calls == []
 
 
 def test_only_trip_admin_can_generate_full_itinerary(client, verifier, repo):
@@ -443,6 +557,7 @@ def test_coordinator_receives_manual_plans_without_rerunning_categories(
             "participantIds": [participant_id],
             "categories": sorted(CATEGORY_ORDER),
             "manualPlanActivities": ["Dinner at Time Out Market"],
+            "provider": None,
         }
     ]
 

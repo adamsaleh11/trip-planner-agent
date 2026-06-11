@@ -145,7 +145,10 @@ def test_group_preferences_visible_to_members(client, verifier, sender):
 
     assert response.status_code == 200
     by_claimed_uid = {entry["claimedByUid"]: entry for entry in response.json()}
-    assert by_claimed_uid["user-a"]["preferences"]["food_drink"]["mealBudget"] == "$$"
+    assert by_claimed_uid["user-a"]["preferences"]["food_drink"]["mealBudget"] == {
+        "amount": 75,
+        "currency": "USD",
+    }
     assert by_claimed_uid["user-b"]["preferences"]["logistics"]["pace"] == "balanced"
 
 
