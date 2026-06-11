@@ -157,3 +157,85 @@ def test_non_admin_cannot_add_manual_participant(client, verifier, sender):
     )
 
     assert response.status_code == 403
+
+
+def test_admin_can_remove_unclaimed_participant(client, verifier):
+    owner = make_user(verifier)
+    trip_id = create_trip(client, owner).json()["id"]
+    participant = client.post(
+        f"/trips/{trip_id}/participants",
+        json={"displayName": "Mom"},
+        headers=_auth(owner),
+    ).json()
+
+    response = client.delete(
+        f"/trips/{trip_id}/participants/{participant['id']}", headers=_auth(owner)
+    )
+
+    assert response.status_code == 204
+    participants = client.get(
+        f"/trips/{trip_id}/participants", headers=_auth(owner)
+    ).json()
+    assert {item["displayName"] for item in participants} == {"Ada"}
+
+
+def test_removing_claimed_participant_revokes_membership(client, verifier, sender):
+    from tests.test_invites import invite
+
+    owner = make_user(verifier, token="tok-a", uid="user-a")
+    trip_id = create_trip(client, owner).json()["id"]
+    token = invite(client, owner, trip_id).json()["inviteUrl"].rsplit("/", 1)[-1]
+    member = make_user(verifier, token="tok-b", uid="user-b", name="Bea")
+    client.post(f"/invites/{token}/accept", headers=_auth(member))
+    participants = client.get(
+        f"/trips/{trip_id}/participants", headers=_auth(owner)
+    ).json()
+    bea = next(item for item in participants if item["displayName"] == "Bea")
+
+    response = client.delete(
+        f"/trips/{trip_id}/participants/{bea['id']}", headers=_auth(owner)
+    )
+
+    assert response.status_code == 204
+    # Bea no longer has access to the trip…
+    assert client.get(f"/trips/{trip_id}", headers=_auth(member)).status_code == 403
+    # …and it is gone from her trip list.
+    my_trips = client.get("/trips", headers=_auth(member)).json()
+    assert trip_id not in {trip["id"] for trip in my_trips}
+    members = client.get(f"/trips/{trip_id}/members", headers=_auth(owner)).json()
+    assert {item["uid"] for item in members} == {"user-a"}
+
+
+def test_admin_participant_cannot_be_removed(client, verifier):
+    owner = make_user(verifier)
+    trip_id = create_trip(client, owner).json()["id"]
+    participants = client.get(
+        f"/trips/{trip_id}/participants", headers=_auth(owner)
+    ).json()
+
+    response = client.delete(
+        f"/trips/{trip_id}/participants/{participants[0]['id']}", headers=_auth(owner)
+    )
+
+    assert response.status_code == 409
+
+
+def test_non_admin_cannot_remove_participant(client, verifier, sender):
+    from tests.test_invites import invite
+
+    owner = make_user(verifier, token="tok-a", uid="user-a")
+    trip_id = create_trip(client, owner).json()["id"]
+    token = invite(client, owner, trip_id).json()["inviteUrl"].rsplit("/", 1)[-1]
+    member = make_user(verifier, token="tok-b", uid="user-b", name="Bea")
+    client.post(f"/invites/{token}/accept", headers=_auth(member))
+    participant = client.post(
+        f"/trips/{trip_id}/participants",
+        json={"displayName": "Mom"},
+        headers=_auth(owner),
+    ).json()
+
+    response = client.delete(
+        f"/trips/{trip_id}/participants/{participant['id']}", headers=_auth(member)
+    )
+
+    assert response.status_code == 403

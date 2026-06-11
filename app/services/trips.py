@@ -173,6 +173,37 @@ def update_participant(
     return Participant(**{**participant.model_dump(), **changes})
 
 
+def remove_participant(
+    repo: Repository, trip_id: str, participant_id: str, uid: str
+) -> None:
+    """Remove a traveler from the trip.
+
+    Claimed participants also lose their membership and the trip is removed
+    from their profile, so access is revoked along with the roster row. The
+    trip admin cannot be removed.
+    """
+    trip = require_admin(repo, trip_id, uid)
+    participant = get_participant(repo, trip_id, participant_id)
+    if participant.claimedByUid == trip.adminUid:
+        raise HTTPException(status_code=409, detail="The trip admin cannot be removed")
+    if participant.claimedByUid:
+        repo.delete(_memberships(trip_id), participant.claimedByUid)
+        profile = repo.get(USERS_COLLECTION, participant.claimedByUid)
+        if profile and trip_id in profile.get("memberTripIds", []):
+            repo.update(
+                USERS_COLLECTION,
+                participant.claimedByUid,
+                {
+                    "memberTripIds": [
+                        t for t in profile["memberTripIds"] if t != trip_id
+                    ]
+                },
+            )
+    repo.delete(f"{TRIPS_COLLECTION}/{trip_id}/preferences", participant_id)
+    repo.delete(_participants(trip_id), participant_id)
+    logger.info("participant removed", extra={"trip_id": trip_id})
+
+
 def find_participant_for_uid(
     repo: Repository, trip_id: str, uid: str
 ) -> Participant | None:

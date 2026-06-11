@@ -91,3 +91,13 @@ def update_participant(
     return trips_service.update_participant(
         repo, trip_id, participant_id, user.uid, payload
     )
+
+
+@router.delete("/{trip_id}/participants/{participant_id}", status_code=204)
+def remove_participant(
+    trip_id: str,
+    participant_id: str,
+    user: CurrentUser = Depends(get_current_user),
+    repo: Repository = Depends(get_repository),
+) -> None:
+    trips_service.remove_participant(repo, trip_id, participant_id, user.uid)
