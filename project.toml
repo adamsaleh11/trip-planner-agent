@@ -1,8 +1,9 @@
 # Buildpack descriptor for Cloud Run source deploys.
 # Forces the Python runtime version; without it the buildpack picks the
-# latest (3.14), where google-cloud-firestore and litellm pin
-# incompatible grpcio ranges. 3.12 matches the verified local venv.
+# latest (3.14), where google-cloud-firestore requires grpcio>=1.75.1
+# (a python>=3.14 marker) while litellm caps grpcio<1.68. The ubuntu2404
+# builder's oldest runtime is 3.13, where the pinned set resolves cleanly.
 
 [[build.env]]
 name = "GOOGLE_PYTHON_VERSION"
-value = "3.12"
+value = "3.13"
