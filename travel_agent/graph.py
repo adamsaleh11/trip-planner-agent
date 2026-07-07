@@ -25,14 +25,22 @@ CATEGORY_ORDER: list[Category] = [
     "culture_local",
     "logistics",
 ]
+EXPERIENCE_CATEGORIES: list[Category] = [
+    "food_drink",
+    "outdoors_scenic",
+    "nightlife",
+    "culture_local",
+]
+TARGET_CANDIDATES_PER_EXPERIENCE_CATEGORY = 15
 MAX_PLACES_QUERIES_PER_CATEGORY = 3
 MAX_PLACES_RESULTS_PER_QUERY = 11
 MAX_ROUTE_ESTIMATES_PER_GENERATION = 8
-CATEGORY_AGENT_MAX_OUTPUT_TOKENS = 2048
+# 15 candidates of schema JSON run ~3-4k tokens; 2048 truncated the output.
+CATEGORY_AGENT_MAX_OUTPUT_TOKENS = 6144
 COORDINATOR_MAX_OUTPUT_TOKENS = 4096
 
 CATEGORY_QUERY_HINTS: dict[Category, list[str]] = {
-    "food_drink": ["restaurants", "cafes", "local drinks"],
+    "food_drink": ["breakfast and brunch spots", "restaurants for lunch and dinner", "local drinks"],
     "outdoors_scenic": ["viewpoints", "parks", "scenic walks"],
     "nightlife": ["bars", "live music", "clubs"],
     "culture_local": ["markets", "museums", "neighborhoods"],
@@ -247,11 +255,32 @@ Tool and cost rules:
 
 Output rules:
 - Return only the CategoryCandidateList schema, not prose.
-- category must be "{category}".
+- category must be "{category}".{_candidate_volume_rules(category)}
 - Every venue must come from search_location_options tool results.
 - Include name, place_id, address, lat, lng, why_it_fits, time_of_day_fit, estimated_price_level, suggested.
 - suggested is item-level provenance: set suggested=false only when the candidate directly traces to explicit current trip participant preferences; set suggested=true for generic, inferred, padding, or memory-inspired candidates that do not directly trace to those preferences. If a retrieved tip usefully explains a pick, cite it as a "travelers tip" inside why_it_fits.
 """.strip()
+
+
+def _candidate_volume_rules(category: Category) -> str:
+    rules: list[str] = []
+    if category in EXPERIENCE_CATEGORIES:
+        rules.append(
+            f"Return {TARGET_CANDIDATES_PER_EXPERIENCE_CATEGORY} candidates. "
+            "If the tool results genuinely lack enough real venues, return fewer — "
+            "never invent or duplicate venues to pad the list."
+        )
+    if category == "food_drink":
+        rules.append(
+            "About 33% of your candidates must be breakfast spots with "
+            'meal_type="breakfast", and about 66% must be lunch or dinner places '
+            'with meal_type="lunch_dinner" (for example, 5 breakfast and 10 '
+            "lunch/dinner out of 15). Apply the same split if you return fewer. "
+            "Set meal_type on every candidate."
+        )
+    else:
+        rules.append("Omit meal_type; it only applies to food_drink candidates.")
+    return "".join(f"\n- {rule}" for rule in rules)
 
 
 def _coordinator_instruction(trip_context: Trip) -> str:
@@ -267,6 +296,7 @@ Itinerary dates: {dates}
 Merge candidate lists from the five category specialists into the final Itinerary schema:
 - days must cover exactly these dates: {dates}.
 - Each day should use blocks with name="morning", name="afternoon", and name="evening" where candidates fit.
+- When scheduling a morning meal stop, prefer food_drink candidates with meal_type="breakfast"; keep meal_type="lunch_dinner" candidates for afternoon and evening meals.
 - Each stop must include time, placeId, name, address, lat, lng, category, transport, whyItFits, suggested, source, and manualPlanId when applicable.
 - Preserve suggested from the category candidate. Do not relabel inferred items as user-requested.
 - Use source="participant_preference" when suggested=false because a category candidate traces directly to participant preferences.

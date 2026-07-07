@@ -37,6 +37,7 @@ class ScriptedGenerationRunner:
         self.coordinator_calls = []
         self.fallback_calls = []
         self.fail_categories = set()
+        self.candidate_overrides = {}
 
     def run_category(self, *, category, trip, group_preferences, trace_id):
         self.category_calls.append(
@@ -60,6 +61,7 @@ class ScriptedGenerationRunner:
                     "estimated_price_level": "$$",
                     "suggested": False,
                     "travelers_tip": "Travelers tip: order the pastry before noon.",
+                    **self.candidate_overrides,
                 }
             ],
             "metrics": {
@@ -289,6 +291,43 @@ def test_admin_can_generate_one_category_result(client, verifier, repo):
     assert runner.category_calls == [
         {"category": "food_drink", "participantIds": [participant_id]}
     ]
+
+
+def test_category_result_exposes_meal_type_when_agent_provides_it(
+    client, verifier, repo
+):
+    from app.services.generation import get_generation_runner
+
+    runner = ScriptedGenerationRunner()
+    runner.candidate_overrides = {"meal_type": "breakfast"}
+    client.app.dependency_overrides[get_generation_runner] = lambda: runner
+    owner = _user(verifier)
+    trip_id = _create_trip(client, owner)
+
+    client.post(
+        f"/trips/{trip_id}/categories/food_drink/generate", headers=_auth(owner)
+    )
+
+    result = repo.get(f"trips/{trip_id}/categoryResults", "food_drink")
+    assert result["candidates"][0]["mealType"] == "breakfast"
+
+
+def test_category_result_omits_meal_type_when_agent_does_not_set_it(
+    client, verifier, repo
+):
+    from app.services.generation import get_generation_runner
+
+    runner = ScriptedGenerationRunner()
+    client.app.dependency_overrides[get_generation_runner] = lambda: runner
+    owner = _user(verifier)
+    trip_id = _create_trip(client, owner)
+
+    client.post(
+        f"/trips/{trip_id}/categories/culture_local/generate", headers=_auth(owner)
+    )
+
+    result = repo.get(f"trips/{trip_id}/categoryResults", "culture_local")
+    assert "mealType" not in result["candidates"][0]
 
 
 def test_running_category_generation_returns_conflict(client, verifier, repo):

@@ -14,6 +14,7 @@ from app.models.preferences import CATEGORIES, GroupPreferencesEntry
 from app.models.trip import Trip
 from app.services.generation import AdkGenerationRunner, estimate_token_cost_usd
 from evals.scorers import (
+    score_candidate_targets,
     score_constraint_adherence,
     score_groundedness,
     score_schema_validity,
@@ -88,7 +89,14 @@ def execute_live_case(case: dict[str, Any]) -> dict[str, Any]:
     )
     all_tool_results.extend(coordinator.get("toolResults", []))
     all_tool_results.append({"manualPlans": case.get("manualPlans", [])})
-    return {"itinerary": coordinator["itinerary"], "toolResults": all_tool_results}
+    return {
+        "itinerary": coordinator["itinerary"],
+        "toolResults": all_tool_results,
+        "categoryCandidates": {
+            category: result["candidates"]
+            for category, result in category_results.items()
+        },
+    }
 
 
 def main() -> None:
@@ -139,7 +147,7 @@ def _execute_with_backoff(executor: EvalExecutor, case: dict[str, Any]) -> dict[
 def _score_case(case: dict[str, Any], output: dict[str, Any]) -> dict[str, float]:
     itinerary = output["itinerary"]
     tool_results = output.get("toolResults", [])
-    return {
+    scores = {
         "schemaValidity": score_schema_validity(itinerary).score,
         "groundedness": score_groundedness(itinerary, tool_results).score,
         "constraintAdherence": score_constraint_adherence(
@@ -151,6 +159,11 @@ def _score_case(case: dict[str, Any], output: dict[str, Any]) -> dict[str, float
             case.get("emptyCategories", []),
         ).score,
     }
+    if "categoryCandidates" in output:
+        scores["candidateTargets"] = score_candidate_targets(
+            output["categoryCandidates"]
+        ).score
+    return scores
 
 
 def _aggregates(per_case: list[dict[str, Any]]) -> dict[str, float]:
@@ -159,16 +172,16 @@ def _aggregates(per_case: list[dict[str, Any]]) -> dict[str, float]:
         "groundedness",
         "constraintAdherence",
         "suggestedFlagHonesty",
+        "candidateTargets",
     ]
     if not per_case:
-        return {key: 0.0 for key in keys}
-    return {
-        key: round(
-            sum(case["scores"][key] for case in per_case) / len(per_case),
-            4,
-        )
-        for key in keys
-    }
+        return {key: 0.0 for key in keys if key != "candidateTargets"}
+    aggregates: dict[str, float] = {}
+    for key in keys:
+        scored = [case["scores"][key] for case in per_case if key in case["scores"]]
+        if scored:
+            aggregates[key] = round(sum(scored) / len(scored), 4)
+    return aggregates
 
 
 def _is_transient(exc: Exception) -> bool:

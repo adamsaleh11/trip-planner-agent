@@ -524,6 +524,9 @@ def _candidate_to_contract(candidate: dict[str, Any]) -> dict[str, Any]:
     travelers_tip = candidate.get("travelers_tip")
     if travelers_tip:
         data["travelersTip"] = travelers_tip
+    meal_type = candidate.get("meal_type")
+    if meal_type:
+        data["mealType"] = meal_type
     return data
 
 

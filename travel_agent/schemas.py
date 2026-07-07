@@ -23,6 +23,7 @@ class CategoryCandidate(BaseModel):
     estimated_price_level: str = "Not available"
     suggested: bool
     travelers_tip: Optional[str] = None
+    meal_type: Optional[Literal["breakfast", "lunch_dinner"]] = None
 
 
 class CategoryCandidateList(BaseModel):

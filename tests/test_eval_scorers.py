@@ -1,4 +1,55 @@
-from evals.scorers import score_groundedness, score_suggested_flag_honesty
+from evals.scorers import (
+    score_candidate_targets,
+    score_groundedness,
+    score_suggested_flag_honesty,
+)
+
+
+def _candidates(count: int, meal_types: list[str] | None = None) -> list[dict]:
+    return [
+        {
+            "name": f"Place {index}",
+            "place_id": f"places/{index}",
+            **({"meal_type": meal_types[index]} if meal_types else {}),
+        }
+        for index in range(count)
+    ]
+
+
+def test_candidate_targets_pass_with_fifteen_per_category_and_meal_split():
+    result = score_candidate_targets(
+        {
+            "food_drink": _candidates(
+                15, meal_types=["breakfast"] * 5 + ["lunch_dinner"] * 10
+            ),
+            "outdoors_scenic": _candidates(15),
+            "nightlife": _candidates(15),
+            "culture_local": _candidates(15),
+            "logistics": _candidates(3),
+        }
+    )
+
+    assert result.score == 1.0
+    assert result.failures == []
+
+
+def test_candidate_targets_fail_on_low_counts_and_skewed_meal_split():
+    result = score_candidate_targets(
+        {
+            "food_drink": _candidates(
+                15, meal_types=["breakfast"] * 1 + ["lunch_dinner"] * 14
+            ),
+            "outdoors_scenic": _candidates(15),
+            "nightlife": _candidates(8),
+            "culture_local": _candidates(15),
+        }
+    )
+
+    assert result.score < 1.0
+    assert result.total == 5
+    assert result.passed == 3
+    assert any("nightlife" in failure for failure in result.failures)
+    assert any("breakfast" in failure for failure in result.failures)
 
 
 ITINERARY = {

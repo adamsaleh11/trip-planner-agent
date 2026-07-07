@@ -11,7 +11,7 @@ from travel_agent.graph import (
     build_coordinator_agent,
     validate_itinerary_grounding,
 )
-from travel_agent.schemas import Itinerary
+from travel_agent.schemas import CategoryCandidate, Itinerary
 
 
 def _trip() -> Trip:
@@ -137,6 +137,60 @@ def test_builders_are_per_request_and_use_expected_tools():
     assert coordinator.output_schema is Itinerary
 
 
+def test_experience_category_agents_target_fifteen_candidates():
+    for category in ["food_drink", "outdoors_scenic", "nightlife", "culture_local"]:
+        agent = build_category_agent(category, _trip(), _group())
+        assert "15 candidates" in agent.instruction, category
+        assert "never invent" in agent.instruction, category
+
+    logistics = build_category_agent("logistics", _trip(), _group())
+    assert "15 candidates" not in logistics.instruction
+
+
+def test_food_agent_splits_breakfast_and_lunch_dinner_by_percentage():
+    agent = build_category_agent("food_drink", _trip(), _group())
+
+    assert "33%" in agent.instruction
+    assert "66%" in agent.instruction
+    assert "breakfast" in agent.instruction
+    assert 'meal_type="breakfast"' in agent.instruction
+    assert 'meal_type="lunch_dinner"' in agent.instruction
+    assert "breakfast" in agent.instruction.split("Tune interests toward:")[1].split("\n")[0]
+
+
+def test_non_food_agents_omit_meal_type():
+    for category in ["outdoors_scenic", "nightlife", "culture_local", "logistics"]:
+        agent = build_category_agent(category, _trip(), _group())
+        assert "Omit meal_type" in agent.instruction, category
+
+
+def test_category_agents_have_output_budget_for_fifteen_candidates():
+    agent = build_category_agent("food_drink", _trip(), _group())
+
+    assert agent.generate_content_config.max_output_tokens >= 6144
+
+
+def test_category_candidate_supports_optional_meal_type():
+    base = {
+        "name": "Cafe Lisboa",
+        "place_id": "places/cafe-lisboa",
+        "address": "Rua A, Lisbon",
+        "why_it_fits": "Great pastries near the lodging.",
+        "time_of_day_fit": "morning",
+        "suggested": False,
+    }
+
+    breakfast = CategoryCandidate.model_validate({**base, "meal_type": "breakfast"})
+    dinner = CategoryCandidate.model_validate({**base, "meal_type": "lunch_dinner"})
+    unmarked = CategoryCandidate.model_validate(base)
+
+    assert breakfast.meal_type == "breakfast"
+    assert dinner.meal_type == "lunch_dinner"
+    assert unmarked.meal_type is None
+    with pytest.raises(ValueError):
+        CategoryCandidate.model_validate({**base, "meal_type": "brunch"})
+
+
 def test_final_itinerary_schema_validates_days_blocks_and_stops():
     itinerary = Itinerary.model_validate(
         {
@@ -227,6 +281,13 @@ def test_coordinator_instruction_mentions_manual_plans_as_user_added_context():
     assert "manual plans" in agent.instruction
     assert "source=\"manual_plan\"" in agent.instruction
     assert "manualPlanWarnings" in agent.instruction
+
+
+def test_coordinator_prefers_breakfast_candidates_for_morning_meals():
+    agent = build_coordinator_agent(_trip())
+
+    assert 'meal_type="breakfast"' in agent.instruction
+    assert "morning" in agent.instruction
 
 
 def test_itinerary_grounding_requires_places_from_captured_tool_results():

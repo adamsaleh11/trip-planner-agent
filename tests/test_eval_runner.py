@@ -65,3 +65,49 @@ def test_eval_runner_scores_cases_and_writes_eval_run():
     assert stored["model"] == "gemini-3.1-flash-lite"
     assert stored["gitSha"] == "abc123"
     assert stored["perCase"][0]["caseId"] == "grounded-empty-food"
+
+
+def test_eval_runner_scores_candidate_targets_when_category_candidates_present():
+    from evals.run import run_eval_cases
+
+    repo = FakeRepository()
+    cases = [{"id": "volume-case", "emptyCategories": [], "constraints": []}]
+
+    def executor(case):
+        def places(count, meal_types=None):
+            return [
+                {
+                    "name": f"Place {index}",
+                    "place_id": f"places/{index}",
+                    **({"meal_type": meal_types[index]} if meal_types else {}),
+                }
+                for index in range(count)
+            ]
+
+        return {
+            "itinerary": {
+                "days": [{"date": "2026-07-10", "blocks": []}]
+            },
+            "toolResults": [],
+            "categoryCandidates": {
+                "food_drink": places(
+                    15, meal_types=["breakfast"] * 5 + ["lunch_dinner"] * 10
+                ),
+                "outdoors_scenic": places(15),
+                "nightlife": places(15),
+                "culture_local": places(15),
+                "logistics": places(3),
+            },
+        }
+
+    result = run_eval_cases(
+        repo,
+        cases,
+        executor=executor,
+        model="gemini-3.1-flash-lite",
+        git_sha="abc123",
+        run_id="eval-volume",
+    )
+
+    assert result["perCase"][0]["scores"]["candidateTargets"] == 1.0
+    assert result["aggregates"]["candidateTargets"] == 1.0
